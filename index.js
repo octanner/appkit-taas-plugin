@@ -78,50 +78,6 @@ async function trigger(appkit, args) {
   }
 }
 
-function trigger(appkit, args) {
-  appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, {
-    'Content-Type': 'text/plain',
-  }, (err, resp) => {
-    if (err) {
-      return appkit.terminal.error(err);
-    }
-    appkit.api.get(`/apps/${resp.app}-${resp.space}/releases`,
-      (err, releasesresp) => {
-        if (err) {
-          return appkit.terminal.error(err);
-        }
-        appkit.api.get(`/apps/${resp.app}-${resp.space}/builds`,
-          (err, buildsresp) => {
-            if (err) {
-              return appkit.terminal.error(err);
-            }
-            const hook = {};
-            hook.release = {};
-            hook.build = {};
-            hook.app = {};
-            hook.action = resp.action;
-            hook.release.result = resp.result;
-            hook.app.id = resp.id;
-            hook.app.name = resp.app;
-            hook.space = {};
-            hook.space.name = resp.space;
-            hook.release.id = releasesresp.pop().id;
-            if (buildsresp.length > 0) {
-              hook.build.id = buildsresp.pop().id;
-            } else {
-              hook.build.id = '';
-            }
-            appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/releasehook`, (err, runresp) => {
-              if (err) {
-                return appkit.terminal.error(err);
-              }
-              console.log(appkit.terminal.markdown('^^ run initiated ^^'));
-            });
-          });
-      });
-  });
-}
-
 async function reRun(appkit, args) {
   try {
     const { _source: source} = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
