@@ -1,4 +1,3 @@
-const readline = require('readline');
 const inquirer = require('inquirer');
 
 const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io';
@@ -18,7 +17,7 @@ async function setVar(appkit, args) {
     const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config`);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -27,7 +26,7 @@ async function unsetVar(appkit, args) {
     const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config/${args.VAR}`, jsonType);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -40,7 +39,7 @@ async function addSecret(appkit, args) {
     const resp = await appkit.api.post(null, `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -53,13 +52,13 @@ async function removeSecret(appkit, args) {
     const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`, jsonType);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
 async function trigger(appkit, args) {
   try {
-    const { 
+    const {
       app, space, id, action, result,
     } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, plainType);
     const releases = await appkit.api.get(`/apps/${app}-${space}/releases`);
@@ -74,28 +73,28 @@ async function trigger(appkit, args) {
     await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/releasehook`);
     console.log(appkit.terminal.markdown('^^ run initiated ^^'));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
 async function reRun(appkit, args) {
   try {
-    const { _source: source} = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
     const query = `space=${source.space}&app=${source.app}&action=release&result=succeeded&buildid=${source.buildid}`;
     await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/rerun?${query}`, {});
     console.log(appkit.terminal.markdown('^^ rerun initiated ^^'));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
 async function runInfo(appkit, args) {
   try {
-    const { _source: source} = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
     delete source.logs;
     appkit.terminal.vtable(source);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -105,14 +104,14 @@ async function addHooks(appkit, args) {
     const hooks = await appkit.api.get(`/apps/${app}/hooks`);
     const needsRelease = !hooks.some(hook => (hook.url.indexOf('/v1/releasehook') > -1 && hook.url.indexOf('alamo-self-diagnostics') > -1));
     const needsBuild = !hooks.some(hook => (hook.url.indexOf('/v1/buildhook') > -1 && hook.url.indexOf('alamo-self-diagnostics') > -1));
-    
+
     let hook = {};
     if (needsRelease) {
       hook = {
         url: `${process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io'}/v1/releasehook`,
         active: true,
         secret: 'merpderp',
-        events: [ 'release' ],
+        events: ['release'],
       };
       await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
       console.log(appkit.terminal.markdown('^^ release hook added ^^'));
@@ -122,102 +121,155 @@ async function addHooks(appkit, args) {
         url: `${process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io'}/v1/buildhook`,
         active: true,
         secret: 'merpderp',
-        events: [ 'build' ],
+        events: ['build'],
       };
       await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
       console.log(appkit.terminal.markdown('^^ release hook added ^^'));
     }
     console.log(appkit.terminal.markdown('^^ done ^^'));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
 async function newRegister(appkit, args) {
+  // Validator Functions
+  const isRequired = input => (input.length > 0 ? true : 'Required Field');
+
+  const isInteger = input => (!Number.isInteger(input) ? 'Must be an Integer' : true);
+
+  const hasHash = (input) => {
+    if (input.length === 0) {
+      return 'Required Field';
+    } if (input.includes('#')) {
+      return 'Please remove leading #';
+    }
+    return true;
+  };
+
+  const validEnv = (input) => {
+    // This is an optional field
+    if (!input || input.length === 0) {
+      return true;
+    }
+
+    // Each pair should have exactly one '='
+    // Key or value should not be an empty string
+    const errors = input.split(' ').map((i) => {
+      const pair = i.split('=');
+      if (pair.length !== 2 || pair[0].length === 0 || pair[1].length === 0) {
+        return i;
+      }
+      return null; // No error (will be filtered out)
+    }).filter(a => !!a);
+
+    // Display which key/value pairs had issues
+    if (errors.length > 0) {
+      return `${errors.length} errors found:\nYour Input: ${input}\nInvalid Entries: ${errors.join(', ')}`;
+    }
+    return true;
+  };
+
+  const validName = (input) => {
+    if (input.length === 0) {
+      return 'Required Field';
+    }
+    if (input.split('-').length === 1 || input.split('-').some(a => a.length === 0)) {
+      // No '-' exists in the string, or there's a dangling '-' (i.e. 'app-')
+      return 'Please enter the full name of the app (e.g. "app-space")';
+    }
+    return true;
+  };
+
+
   const questions = [
     {
       name: 'app',
       type: 'input',
-      message: 'App Name',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
+      message: 'App Name:',
+      validate: validName,
     },
     {
       name: 'job',
       type: 'input',
-      message: 'Job Name',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
+      message: 'Job Name:',
+      validate: isRequired,
     },
     {
       name: 'jobSpace',
       type: 'input',
-      message: 'Job Space',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
+      message: 'Job Space:',
+      validate: isRequired,
     },
     {
       name: 'image',
       type: 'input',
-      message: 'Image',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
+      message: 'Image:',
+      validate: isRequired,
     },
     {
       name: 'autoPromote',
       type: 'list',
       message: 'Automatically promote?',
       choices: ['Yes', 'No'],
+      filter: input => (input === 'Yes'),
     },
     {
       name: 'pipelineName',
       type: 'input',
-      message: 'Pipeline Name',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
-      when: (answers) => answers.autoPromote ? true : false,
+      message: 'Pipeline Name:',
+      validate: isRequired,
+      when: answers => !!answers.autoPromote,
     },
     {
       name: 'transitionFrom',
       type: 'input',
-      message: 'Transition From',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
-      when: (answers) => answers.autoPromote ? true : false,
+      message: 'Transition From:',
+      validate: isRequired,
+      when: answers => !!answers.autoPromote,
     },
     {
       name: 'transitionTo',
       type: 'input',
-      message: 'Transition To',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
-      when: (answers) => answers.autoPromote ? true : false,
+      message: 'Transition To:',
+      validate: isRequired,
+      when: answers => !!answers.autoPromote,
     },
     {
       name: 'timeout',
       type: 'number',
-      message: 'Timeout',
-      validate: (input, answers) => !input ? 'Required Field' : true,
+      message: 'Timeout:',
+      validate: isInteger,
     },
     {
       name: 'startDelay',
       type: 'number',
-      message: 'Start Delay',
-      validate: (input, answers) => !input ? 'Required Field' : true,
+      message: 'Start Delay:',
+      validate: isInteger,
     },
     {
       name: 'slackChannel',
       type: 'input',
-      message: 'Slack Channel (no leading #)',
-      validate: (input, answers) => input.length > 0 ? true : 'Required Field',
+      message: 'Slack Channel (no leading #):',
+      validate: hasHash,
     },
     {
       name: 'envVars',
       type: 'input',
-      message: 'Environment Variables\n(e.g. KEY="value" KEY2=value2)\n',
-      default: '',
+      message: 'Environment Variables:\n  (e.g. KEY="value" KEY2=value2)\n>',
+      validate: validEnv,
     },
   ];
 
-  try {
-    const answers = await inquirer.prompt(questions);
 
+  try {
+    console.log(appkit.terminal.markdown('\n###===### New Test Registration ###===###'));
+    console.log(appkit.terminal.markdown('###(Press [CTRL+C] to cancel at any time)###\n'));
+
+    const answers = await inquirer.prompt(questions);
     const diagnostic = {
       app: answers.app.split('-')[0],
-      space: answers.app.split('-').shift().join('-'),
+      space: answers.app.split('-').slice(1).join('-'),
       action: 'release',
       result: 'succeeded',
       job: answers.job,
@@ -229,17 +281,17 @@ async function newRegister(appkit, args) {
       timeout: answers.timeout,
       startdelay: answers.startDelay,
       slackchannel: answers.slackChannel,
-      env: answers.envVars.replace('"', '').split(' ').map(env => ({
+      env: answers.envVars.replace(/"/g, '').split(' ').map(env => ({
         name: env.split('=')[0],
         value: env.split('=')[1],
       })),
     };
     const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
-    args.app = answers.app;
+    args.app = answers.app; // eslint-disable-line
     appkit.terminal.vtable(resp);
     addHooks(appkit, args);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -251,7 +303,7 @@ async function getLogs(appkit, args) {
     } else {
       const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
       const { runs } = await appkit.http.get(
-        `${DIAGNOSTICS_API_URL}/v1/diagnostic/jobspace/${resp.jobspace}/job/${resp.job}/runs`, 
+        `${DIAGNOSTICS_API_URL}/v1/diagnostic/jobspace/${resp.jobspace}/job/${resp.job}/runs`,
         jsonType,
       );
       if (!runs) { throw new Error('no runs'); }
@@ -260,7 +312,7 @@ async function getLogs(appkit, args) {
     const logArray = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${uuid}/array`, plainType);
     logArray.forEach(line => console.log(line));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -272,17 +324,19 @@ async function listRuns(appkit, args) {
       { 'Content-Type': 'application/json' },
     );
 
-    if (!runs) { return appkit.terminal.error('no runs'); }
+    if (!runs) {
+      appkit.terminal.error('no runs');
+    }
 
     appkit.terminal.table(runs.map(runItem => ({
       runid: runItem.id,
-      app: `${runitem.app}-${runitem.space}`,
-      test: `${runitem.job}-${runitem.jobspace}`,
+      app: `${runItem.app}-${runItem.space}`,
+      test: `${runItem.job}-${runItem.jobspace}`,
       time: runItem.hrtimestamp,
       status: appkit.terminal.markdown(runItem.overallstatus === 'success' ? '^^ success ^^' : `!! ${runItem.overallstatus} !!`),
     })));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -292,9 +346,9 @@ async function updateJob(appkit, args) {
   try {
     const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
 
-    if (property == 'timeout' || property == 'startdelay') {
+    if (property === 'timeout' || property === 'startdelay') {
       resp[property] = parseInt(value, 10);
-    } else if (property == 'env') {
+    } else if (property === 'env') {
       const env = value.toString().split(' ').map(pair => ({
         name: pair.split('=')[0],
         value: pair.split('=')[1],
@@ -307,7 +361,7 @@ async function updateJob(appkit, args) {
     const resp2 = await appkit.api.patch(JSON.stringify(resp), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
     appkit.terminal.vtable(resp2);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -332,7 +386,7 @@ async function job(appkit, args) {
     console.log(appkit.terminal.markdown('^^ env: ^^'));
     appkit.terminal.table(jobItem.env);
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -351,7 +405,7 @@ async function listConfig(appkit, args) {
       env.forEach(x => console.log(`export ${x.name}=${x.value}`));
     }
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
@@ -360,15 +414,15 @@ async function deleteTest(appkit, args) {
     await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
     console.log(appkit.terminal.markdown('^^ deleted ^^'));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
-function colorize(text, colorname) {
+function colorize(text, colorname) { // eslint-disable-line
   return text;
 }
 
-async function images(appkit, args) {
+async function images(appkit) {
   try {
     const tests = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
     const colorList = ['', 'green', 'blue', 'yellow', 'orange', 'purple', 'red'];
@@ -376,7 +430,7 @@ async function images(appkit, args) {
     let currentColor = 0;
     let currentImage = '';
 
-    appkit.terminal.table(tests.map(test => {
+    appkit.terminal.table(tests.map((test) => {
       const imageNameAndTag = test.image.split('/').pop();
       if (imageNameAndTag !== currentImage && !colorImageMap[imageNameAndTag] > 0) {
         currentColor += 1;
@@ -384,18 +438,21 @@ async function images(appkit, args) {
       }
       currentImage = imageNameAndTag;
       return {
-        image: colorize(imageNameAndTag, colorList[colorImageMap[imageNameAndTag]] || colorList[currentColor]),
+        image: colorize(
+          imageNameAndTag,
+          colorList[colorImageMap[imageNameAndTag]] || colorList[currentColor],
+        ),
         test: `${test.job}-${test.jobspace}`,
         app: `${test.app}-${test.space}`,
         id: test.id,
       };
     }));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
-async function list(appkit, args) {
+async function list(appkit) {
   try {
     const tests = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
     appkit.terminal.table(tests.map(test => ({
@@ -406,14 +463,14 @@ async function list(appkit, args) {
       result: test.result,
     })));
   } catch (err) {
-    return appkit.terminal.error(err);
+    appkit.terminal.error(err);
   }
 }
 
 function update() {}
 
 function init(appkit) {
-  const hooks_opts = {
+  const hooksOpts = {
     app: {
       alias: 'a',
       string: true,
@@ -422,7 +479,7 @@ function init(appkit) {
     },
   };
 
-  const list_opts = {
+  const listOpts = {
     app: {
       alias: 'a',
       string: true,
@@ -431,7 +488,7 @@ function init(appkit) {
     },
   };
 
-  const update_opts = {
+  const updateOpts = {
     property: {
       alias: 'p',
       string: true,
@@ -447,7 +504,7 @@ function init(appkit) {
     },
   };
 
-  const secret_opts = {
+  const secretOpts = {
     plan: {
       alias: 'p',
       string: true,
@@ -456,7 +513,7 @@ function init(appkit) {
     },
   };
 
-  const listconfig_opts = {
+  const listConfigOpts = {
     simple: {
       alias: 's',
       boolean: true,
@@ -472,20 +529,20 @@ function init(appkit) {
   };
 
   appkit.args
-    .command('taas:tests', 'list tests', list_opts, list.bind(null, appkit))
+    .command('taas:tests', 'list tests', listOpts, list.bind(null, appkit))
     .command('taas:images', 'list images', {}, images.bind(null, appkit))
     .command('taas:tests:info ID', 'describe test', {}, job.bind(null, appkit))
     .command('taas:tests:register', 'register test', {}, newRegister.bind(null, appkit))
-    .command('taas:tests:update ID', 'update test', update_opts, updateJob.bind(null, appkit))
+    .command('taas:tests:update ID', 'update test', updateOpts, updateJob.bind(null, appkit))
     .command('taas:tests:destroy ID', 'delete test', {}, deleteTest.bind(null, appkit))
     .command('taas:tests:trigger ID', 'trigger a test', {}, trigger.bind(null, appkit))
     .command('taas:tests:runs ID', 'list test runs', {}, listRuns.bind(null, appkit))
-    .command('taas:config ID', 'list environment variables', listconfig_opts, listConfig.bind(null, appkit))
+    .command('taas:config ID', 'list environment variables', listConfigOpts, listConfig.bind(null, appkit))
     .command('taas:config:set ID KVPAIR', 'set an environment variable', {}, setVar.bind(null, appkit))
     .command('taas:config:unset ID VAR', 'unset and environment variable', {}, unsetVar.bind(null, appkit))
-    .command('taas:secret:create ID', 'adds a secret to a test', secret_opts, addSecret.bind(null, appkit))
-    .command('taas:secret:remove ID', 'removed a secret from a test', secret_opts, removeSecret.bind(null, appkit))
-    .command('taas:hooks:create', 'add testing hooks to an app', hooks_opts, addHooks.bind(null, appkit))
+    .command('taas:secret:create ID', 'adds a secret to a test', secretOpts, addSecret.bind(null, appkit))
+    .command('taas:secret:remove ID', 'removed a secret from a test', secretOpts, removeSecret.bind(null, appkit))
+    .command('taas:hooks:create', 'add testing hooks to an app', hooksOpts, addHooks.bind(null, appkit))
     .command('taas:runs:info ID', 'get info for a run', {}, runInfo.bind(null, appkit))
     .command('taas:runs:output ID', 'get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
     .command('taas:runs:rerun ID', 'reruns a run', {}, reRun.bind(null, appkit));
