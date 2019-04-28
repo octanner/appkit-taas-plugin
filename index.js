@@ -610,14 +610,6 @@ function init(appkit) {
             demand: true
         }
     }
-    const list_opts = {
-        app: {
-            alias: 'a',
-            string: true,
-            description: 'app name.',
-            demand: false
-        }
-    }
     const job_opts = {
         job: {
             alias: 'j',
@@ -671,7 +663,7 @@ function init(appkit) {
     }
 
     appkit.args
-        .command('taas:tests', 'list tests', list_opts, list.bind(null, appkit))
+        .command('taas:tests', 'list tests', {}, list.bind(null, appkit))
         .command('taas:images', 'list images', {}, images.bind(null, appkit))
         .command('taas:tests:info ID', 'describe test', {}, job.bind(null, appkit))
         .command('taas:tests:register', 'register test', {}, newregister.bind(null, appkit))
