@@ -1,7 +1,6 @@
-**Installation**  ( not "published" yet )
+**Installation**  
 
-aka plugins:install https://github.com/octanner/appkit-taas-plugin
-
+aka plugins:install taas
 
 
 
