@@ -679,6 +679,7 @@ function init(appkit) {
         .command('taas:hooks:create', 'add testing hooks to an app', hooks_opts, addhooks.bind(null, appkit))
         .command('taas:runs:info ID' , 'get info for a run', {}, runinfo.bind(null, appkit))
         .command('taas:runs:output ID', 'get logs for a run. If ID is a test name, gets latest', {}, getlogs.bind(null, appkit))
+        .command('taas:logs ID', 'get logs for a run. If ID is a test name, gets latest', {}, getlogs.bind(null, appkit))
         .command('taas:runs:rerun ID', 'reruns a run', {}, rerun.bind(null, appkit))
 
 
