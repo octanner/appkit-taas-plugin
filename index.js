@@ -15,6 +15,63 @@ function setvar(appkit, args){
   
 }
 
+
+
+function multiset(appkit, args){
+  var prefix  = args.p || args.prefix
+  var suffix  = args.s || args.suffix
+  if (!prefix && !suffix){
+       console.log("Must specify either prefix or suffix")
+       return
+   }
+   if (prefix && suffix){
+       console.log("Can not specify both prefix and suffix")
+       return
+   }
+   var configvar = {}
+   configvar.varname  = args.KVPAIR.split("=")[0]
+   configvar.varvalue = args.KVPAIR.split("=")[1]
+
+    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostics?simple=true', {
+        "Content-Type": "application/json"
+    }, function(err, resp) {
+        if (err) {
+            return appkit.terminal.error(err);
+        }
+        var matches = [];
+        resp.forEach(function(testitem) {
+            var testname = testitem.job + "-" + testitem.jobspace
+           if (prefix){
+            if (testname.startsWith(prefix)) {
+                matches.push(testname)
+            }
+           }
+           if (suffix){
+            if (testname.endsWith(suffix)) {
+                matches.push(testname)
+            }
+           }
+        });
+        console.log("About to set "+configvar.varname+" to "+configvar.varvalue+" for:")
+        console.log(matches.join("\n"))
+        var continueresp=""
+        newask("Continue? (Y/N)", function(continuex) {
+         continueresp=continuex
+         if  (continueresp=="Y") {
+             console.log("continuing ... ")
+             for(var currentmatch of matches) {
+                 appkit.api.post(JSON.stringify(configvar), DIAGNOSTICS_API_URL+"/v1/diagnostic/"+currentmatch+"/config", function(err, resp) {
+                                                    if (err) {
+                                                        return appkit.terminal.error(err);
+                                                    }
+                                                appkit.terminal.vtable(resp);
+                 })
+             }
+         }
+        });
+    });
+}
+
 function unsetvar(appkit, args){
    appkit.http.delete(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + args.ID+'/config/'+args.VAR, {
         "Content-Type": "application/json"
@@ -658,8 +715,21 @@ function init(appkit) {
             description: 'show as exports',
             demand: false
         },
-       
+    }
 
+    const multiset_opts = {
+        suffix: {
+            alias: 's',
+            string: true,
+            description: 'filter by suffix',
+            demand: false
+        },
+        prefix: {
+            alias: 'p',
+            string: true,
+            description: 'filter by prefix',
+            demand: false
+        },
     }
 
     appkit.args
@@ -679,10 +749,14 @@ function init(appkit) {
         .command('taas:hooks:create', 'add testing hooks to an app', hooks_opts, addhooks.bind(null, appkit))
         .command('taas:runs:info ID' , 'get info for a run', {}, runinfo.bind(null, appkit))
         .command('taas:runs:output ID', 'get logs for a run. If ID is a test name, gets latest', {}, getlogs.bind(null, appkit))
+        .command('taas:logs ID', 'get logs for a run. If ID is a test name, gets latest', {}, getlogs.bind(null, appkit))
         .command('taas:runs:rerun ID', 'reruns a run', {}, rerun.bind(null, appkit))
+ if (process.env.TAAS_BETA=="true"){
+     appkit.args
+        .command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiset_opts, multiset.bind(null, appkit))
+    }
+    }
 
-
-}
 module.exports = {
     init: init,
     update: update,
