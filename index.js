@@ -18,7 +18,7 @@ async function multiSet(appkit, args) {
     return;
   }
 
-  if (!args.KVPAIR.contains('=')) {
+  if (!args.KVPAIR.includes('=')) {
     console.log('Invalid key/value pair.');
     return;
   }
@@ -31,7 +31,7 @@ async function multiSet(appkit, args) {
   try {
     const diagnostics = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
 
-    const matches = diagnostics.reduce((testitem, result) => {
+    const matches = diagnostics.reduce((result, testitem) => {
       const testname = `${testitem.job}-${testitem.jobspace}`;
       if ((prefix && testname.startsWith(prefix)) || (suffix && testname.endsWith(suffix))) {
         result.push(testname);
