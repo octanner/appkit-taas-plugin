@@ -4,6 +4,64 @@ const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-se
 const jsonType = { 'Content-Type': 'application/json' };
 const plainType = { 'Content-Type': 'text/plain' };
 
+async function multiSet(appkit, args) {
+  const prefix = args.p || args.prefix;
+  const suffix = args.s || args.suffix;
+
+  if (!prefix && !suffix) {
+    console.log('Must specify either prefix or suffix');
+    return;
+  }
+
+  if (prefix && suffix) {
+    console.log('Can not specify both prefix and suffix');
+    return;
+  }
+
+  if (!args.KVPAIR.contains('=')) {
+    console.log('Invalid key/value pair.');
+    return;
+  }
+
+  const configvar = {
+    varname: args.KVPAIR.split('=')[0],
+    varvalue: args.KVPAIR.split('=')[1],
+  };
+
+  try {
+    const diagnostics = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
+
+    const matches = diagnostics.reduce((testitem, result) => {
+      const testname = `${testitem.job}-${testitem.jobspace}`;
+      if ((prefix && testname.startsWith(prefix)) || (suffix && testname.endsWith(suffix))) {
+        result.push(testname);
+      }
+      return result;
+    }, []);
+
+    console.log(`About to set ${configvar.varname} to ${configvar.varvalue} for:`);
+    console.log(matches.join('\n'));
+
+    const { confirm } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Continue?',
+      default: false,
+    });
+
+    if (confirm) {
+      console.log('Continuing ... ');
+
+      matches.forEach(async (currentMatch) => {
+        const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config`);
+        appkit.terminal.vtable(resp);
+      });
+    }
+  } catch (err) {
+    appkit.terminal.error(err);
+  }
+}
+
 function isUUID(str) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
 }
@@ -519,6 +577,21 @@ function init(appkit) {
     },
   };
 
+  const multiSetOpts = {
+    suffix: {
+      alias: 's',
+      string: true,
+      description: 'filter by suffix',
+      demand: false,
+    },
+    prefix: {
+      alias: 'p',
+      string: true,
+      description: 'filter by prefix',
+      demand: false,
+    },
+  };
+
   appkit.args
     .command('taas:tests', 'List tests', {}, list.bind(null, appkit))
     .command('taas:images', 'List images', {}, images.bind(null, appkit))
@@ -536,7 +609,12 @@ function init(appkit) {
     .command('taas:hooks:create', 'Add testing hooks to an app', hooksOpts, addHooks.bind(null, appkit))
     .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
     .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
-    .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit));
+    .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
+    .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
+
+  if (process.env.TAAS_BETA === 'true') {
+    appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
+  }
 }
 
 module.exports = {
