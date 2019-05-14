@@ -479,15 +479,6 @@ function init(appkit) {
     },
   };
 
-  const listOpts = {
-    app: {
-      alias: 'a',
-      string: true,
-      description: 'app name.',
-      demand: false,
-    },
-  };
-
   const updateOpts = {
     property: {
       alias: 'p',
@@ -529,23 +520,23 @@ function init(appkit) {
   };
 
   appkit.args
-    .command('taas:tests', 'list tests', listOpts, list.bind(null, appkit))
-    .command('taas:images', 'list images', {}, images.bind(null, appkit))
-    .command('taas:tests:info ID', 'describe test', {}, job.bind(null, appkit))
-    .command('taas:tests:register', 'register test', {}, newRegister.bind(null, appkit))
-    .command('taas:tests:update ID', 'update test', updateOpts, updateJob.bind(null, appkit))
-    .command('taas:tests:destroy ID', 'delete test', {}, deleteTest.bind(null, appkit))
-    .command('taas:tests:trigger ID', 'trigger a test', {}, trigger.bind(null, appkit))
-    .command('taas:tests:runs ID', 'list test runs', {}, listRuns.bind(null, appkit))
-    .command('taas:config ID', 'list environment variables', listConfigOpts, listConfig.bind(null, appkit))
-    .command('taas:config:set ID KVPAIR', 'set an environment variable', {}, setVar.bind(null, appkit))
-    .command('taas:config:unset ID VAR', 'unset and environment variable', {}, unsetVar.bind(null, appkit))
-    .command('taas:secret:create ID', 'adds a secret to a test', secretOpts, addSecret.bind(null, appkit))
-    .command('taas:secret:remove ID', 'removed a secret from a test', secretOpts, removeSecret.bind(null, appkit))
-    .command('taas:hooks:create', 'add testing hooks to an app', hooksOpts, addHooks.bind(null, appkit))
-    .command('taas:runs:info ID', 'get info for a run', {}, runInfo.bind(null, appkit))
-    .command('taas:runs:output ID', 'get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
-    .command('taas:runs:rerun ID', 'reruns a run', {}, reRun.bind(null, appkit));
+    .command('taas:tests', 'List tests', {}, list.bind(null, appkit))
+    .command('taas:images', 'List images', {}, images.bind(null, appkit))
+    .command('taas:tests:info ID', 'Describe test', {}, job.bind(null, appkit))
+    .command('taas:tests:register', 'Register test', {}, newRegister.bind(null, appkit))
+    .command('taas:tests:update ID', 'Update test', updateOpts, updateJob.bind(null, appkit))
+    .command('taas:tests:destroy ID', 'Delete test', {}, deleteTest.bind(null, appkit))
+    .command('taas:tests:trigger ID', 'Trigger a test', {}, trigger.bind(null, appkit))
+    .command('taas:tests:runs ID', 'List test runs', {}, listRuns.bind(null, appkit))
+    .command('taas:config ID', 'List environment variables', listConfigOpts, listConfig.bind(null, appkit))
+    .command('taas:config:set ID KVPAIR', 'Set an environment variable', {}, setVar.bind(null, appkit))
+    .command('taas:config:unset ID VAR', 'Unset an environment variable', {}, unsetVar.bind(null, appkit))
+    .command('taas:secret:create ID', 'Add a secret to a test', secretOpts, addSecret.bind(null, appkit))
+    .command('taas:secret:remove ID', 'Remove a secret from a test', secretOpts, removeSecret.bind(null, appkit))
+    .command('taas:hooks:create', 'Add testing hooks to an app', hooksOpts, addHooks.bind(null, appkit))
+    .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
+    .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
+    .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit));
 }
 
 module.exports = {
