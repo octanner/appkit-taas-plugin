@@ -18,7 +18,7 @@ async function multiSet(appkit, args) {
     return;
   }
 
-  if (!args.KVPAIR.includes('=')) {
+  if (args.KVPAIR.split('=').length !== 2 || args.KVPAIR.split('=')[0] === '' || args.KVPAIR.split('=')[1] === '') {
     console.log('Invalid key/value pair.');
     return;
   }
@@ -38,6 +38,11 @@ async function multiSet(appkit, args) {
       }
       return result;
     }, []);
+
+    if (matches.length === 0) {
+      console.log(`No matches for the ${prefix ? 'prefix' : 'suffix'} ${prefix || suffix}`);
+      return;
+    }
 
     console.log(`About to set ${configvar.varname} to ${configvar.varvalue} for:`);
     console.log(matches.join('\n'));
