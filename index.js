@@ -4,6 +4,61 @@ const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-se
 const jsonType = { 'Content-Type': 'application/json' };
 const plainType = { 'Content-Type': 'text/plain' };
 
+
+async function multiUnSet(appkit, args) {
+  const prefix = args.p || args.prefix;
+  const suffix = args.s || args.suffix;
+
+  if (!prefix && !suffix) {
+    console.log('Must specify either prefix or suffix');
+    return;
+  }
+
+  if (prefix && suffix) {
+    console.log('Can not specify both prefix and suffix');
+    return;
+  }
+
+  try {
+    const diagnostics = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
+
+    const matches = diagnostics.reduce((result, testitem) => {
+      const testname = `${testitem.job}-${testitem.jobspace}`;
+      if ((prefix && testname.startsWith(prefix)) || (suffix && testname.endsWith(suffix))) {
+        result.push(testname);
+      }
+      return result;
+    }, []);
+
+    if (matches.length === 0) {
+      console.log(`No matches for the ${prefix ? 'prefix' : 'suffix'} ${prefix || suffix}`);
+      return;
+    }
+
+    console.log(`About to unset ${args.KEY} for:`);
+    console.log(matches.join('\n'));
+
+    const { confirm } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Continue?',
+      default: false,
+    });
+
+    if (confirm) {
+      console.log('Continuing ... ');
+
+      matches.forEach(async (currentMatch) => {
+        const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config/${args.KEY}`);
+        appkit.terminal.vtable(resp);
+      });
+    }
+  } catch (err) {
+    appkit.terminal.error(err);
+  }
+}
+
+
 async function multiSet(appkit, args) {
   const prefix = args.p || args.prefix;
   const suffix = args.s || args.suffix;
@@ -619,6 +674,7 @@ function init(appkit) {
 
   if (process.env.TAAS_BETA === 'true') {
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
+    appkit.args.command('taas:config:multiunset KEY', 'BETA: unset an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiUnSet.bind(null, appkit));
   }
 }
 
