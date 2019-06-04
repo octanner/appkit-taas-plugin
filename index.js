@@ -379,7 +379,6 @@ async function newRegister(appkit, args) {
     },
   ];
 
-
   try {
     console.log(appkit.terminal.markdown('\n###===### New Test Registration ###===###'));
     console.log(appkit.terminal.markdown('###(Press [CTRL+C] to cancel at any time)###\n'));
@@ -399,10 +398,14 @@ async function newRegister(appkit, args) {
       timeout: answers.timeout,
       startdelay: answers.startDelay,
       slackchannel: answers.slackChannel,
-      env: answers.envVars.replace(/"/g, '').split(' ').map(env => ({
-        name: env.split('=')[0],
-        value: env.split('=')[1],
-      })),
+      env: answers.envVars
+        .replace(/"/g, '')
+        .split(' ')
+        .map(env => ({
+          name: env.split('=')[0],
+          value: env.split('=')[1],
+        }))
+        .filter(e => e.name && e.value),
     };
     const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
     args.app = answers.app; // eslint-disable-line
