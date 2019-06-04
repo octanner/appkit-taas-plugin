@@ -74,7 +74,12 @@ async function multiSet(appkit, args) {
   }
 
   if (args.KVPAIR.split('=').length !== 2 || args.KVPAIR.split('=')[0] === '' || args.KVPAIR.split('=')[1] === '') {
-    console.log('Invalid key/value pair.');
+    appkit.terminal.error('Invalid key/value pair.');
+    return;
+  }
+
+  if (args.KVPAIR.match(/\s/g)) {
+    appkit.terminal.error('Whitespace not allowed in key/value pair.');
     return;
   }
 
@@ -127,10 +132,21 @@ function isUUID(str) {
 }
 
 async function setVar(appkit, args) {
+  if (args.KVPAIR.split('=').length !== 2 || args.KVPAIR.split('=')[0] === '' || args.KVPAIR.split('=')[1] === '') {
+    appkit.terminal.error('Invalid key/value pair.');
+    return;
+  }
+
+  if (args.KVPAIR.match(/\s/g)) {
+    appkit.terminal.error('Whitespace not allowed in key/value pair.');
+    return;
+  }
+
   const configvar = {
     varname: args.KVPAIR.split('=')[0],
     varvalue: args.KVPAIR.split('=')[1],
   };
+
   try {
     const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config`);
     appkit.terminal.vtable(resp);
