@@ -4,6 +4,21 @@ const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-se
 const jsonType = { 'Content-Type': 'application/json' };
 const plainType = { 'Content-Type': 'text/plain' };
 
+function parseError(error) {
+  if (error.body) {
+    try {
+      const json = JSON.parse(error.body.toString());
+      if (json.response) {
+        return json.response;
+      }
+      return json;
+    } catch (err) {
+      return error.body.toString();
+    }
+  } else {
+    return error.toString();
+  }
+}
 
 async function multiUnSet(appkit, args) {
   const prefix = args.p || args.prefix;
@@ -54,7 +69,7 @@ async function multiUnSet(appkit, args) {
       });
     }
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -123,7 +138,7 @@ async function multiSet(appkit, args) {
       });
     }
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -151,7 +166,7 @@ async function setVar(appkit, args) {
     const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config`);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -160,7 +175,7 @@ async function unsetVar(appkit, args) {
     const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config/${args.VAR}`, jsonType);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -173,7 +188,7 @@ async function addSecret(appkit, args) {
     const resp = await appkit.api.post(null, `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -186,7 +201,7 @@ async function removeSecret(appkit, args) {
     const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`, jsonType);
     appkit.terminal.vtable(resp);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -207,7 +222,7 @@ async function trigger(appkit, args) {
     await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/releasehook`);
     console.log(appkit.terminal.markdown('^^ run initiated ^^'));
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -218,7 +233,7 @@ async function reRun(appkit, args) {
     await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/rerun?${query}`, {});
     console.log(appkit.terminal.markdown('^^ rerun initiated ^^'));
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -228,7 +243,7 @@ async function runInfo(appkit, args) {
     delete source.logs;
     appkit.terminal.vtable(source);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -428,7 +443,7 @@ async function newRegister(appkit, args) {
     appkit.terminal.vtable(resp);
     addHooks(appkit, args);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -449,7 +464,7 @@ async function getLogs(appkit, args) {
     const logArray = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${uuid}/array`, plainType);
     logArray.forEach(line => console.log(line));
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -473,7 +488,7 @@ async function listRuns(appkit, args) {
       status: appkit.terminal.markdown(runItem.overallstatus === 'success' ? '^^ success ^^' : `!! ${runItem.overallstatus} !!`),
     })));
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -498,7 +513,7 @@ async function updateJob(appkit, args) {
     const resp2 = await appkit.api.patch(JSON.stringify(resp), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
     appkit.terminal.vtable(resp2);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -523,7 +538,7 @@ async function job(appkit, args) {
     console.log(appkit.terminal.markdown('^^ env: ^^'));
     appkit.terminal.table(jobItem.env);
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -542,7 +557,7 @@ async function listConfig(appkit, args) {
       env.forEach(x => console.log(`export ${x.name}=${x.value}`));
     }
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -551,7 +566,7 @@ async function deleteTest(appkit, args) {
     await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
     console.log(appkit.terminal.markdown('^^ deleted ^^'));
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -585,7 +600,7 @@ async function images(appkit) {
       };
     }));
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -600,7 +615,7 @@ async function list(appkit) {
       result: test.result,
     })));
   } catch (err) {
-    appkit.terminal.error(err);
+    appkit.terminal.error(parseError(err));
   }
 }
 
