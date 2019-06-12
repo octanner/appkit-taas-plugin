@@ -357,6 +357,20 @@ async function newRegister(appkit, args) {
       validate: isRequired,
     },
     {
+      name: 'override',
+      type: 'list',
+      message: 'Override command in docker image?',
+      choices: ['Yes', 'No'],
+      filter: input => (input === 'Yes'),
+    },
+    {
+      name: 'command',
+      type: 'input',
+      message: 'Command:',
+      validate: isRequired,
+      when: answers => !!answers.override,
+    },
+    {
       name: 'autoPromote',
       type: 'list',
       message: 'Automatically promote?',
@@ -423,6 +437,7 @@ async function newRegister(appkit, args) {
       job: answers.job,
       jobspace: answers.jobSpace,
       image: answers.image,
+      command: answers.override ? answers.command : undefined,
       pipelinename: answers.autoPromote ? answers.pipelineName : 'manual',
       transitionfrom: answers.autoPromote ? answers.transitionFrom : 'manual',
       transitionto: answers.autoPromote ? answers.transitionTo : 'manual',
@@ -534,9 +549,14 @@ async function job(appkit, args) {
       timeout: jobItem.timeout,
       startdelay: jobItem.startdelay,
       slackchannel: jobItem.slackchannel,
+      command: jobItem.command ? jobItem.command : 'Default command in image',
     });
     console.log(appkit.terminal.markdown('^^ env: ^^'));
-    appkit.terminal.table(jobItem.env);
+    if (jobItem.env) {
+      appkit.terminal.table(jobItem.env);
+    } else {
+      console.log(appkit.terminal.markdown('  ***n/a***'));
+    }
   } catch (err) {
     appkit.terminal.error(parseError(err));
   }
@@ -547,14 +567,18 @@ async function listConfig(appkit, args) {
   const exports = args.e || args.exports;
   try {
     const { env } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
-    if (!simple && !exports) {
-      appkit.terminal.table(env);
-    }
-    if (simple) {
-      env.forEach(x => console.log(`${x.name}=${x.value}`));
-    }
-    if (exports) {
-      env.forEach(x => console.log(`export ${x.name}=${x.value}`));
+    if (!env) {
+      console.log(appkit.terminal.markdown(`\nNo environment variables set on ***${args.ID}***!`));
+    } else {
+      if (!simple && !exports) {
+        appkit.terminal.table(env);
+      }
+      if (simple) {
+        env.forEach(x => console.log(`${x.name}=${x.value}`));
+      }
+      if (exports) {
+        env.forEach(x => console.log(`export ${x.name}=${x.value}`));
+      }
     }
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -636,7 +660,7 @@ function init(appkit) {
       alias: 'p',
       string: true,
       description: 'property name (timeout, transitionfrom, env, etc).',
-      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel'],
+      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel', 'command'],
       demand: true,
     },
     value: {
