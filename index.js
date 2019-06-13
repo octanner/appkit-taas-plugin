@@ -240,6 +240,10 @@ async function reRun(appkit, args) {
 async function runInfo(appkit, args) {
   try {
     const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    if (typeof source.job === 'undefined' || source.job === '') {
+      appkit.terminal.error(appkit.terminal.markdown('!!Invalid run ID!!'));
+      return;
+    }
     delete source.logs;
     appkit.terminal.vtable(source);
   } catch (err) {
@@ -658,6 +662,22 @@ async function list(appkit) {
   }
 }
 
+async function artifacts(appkit, args) {
+  try {
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    if (typeof source.job === 'undefined' || source.job === '') {
+      appkit.terminal.error(appkit.terminal.markdown('!!Invalid run ID!!'));
+      return;
+    }
+    console.log(appkit.terminal.markdown(`\n~~Artifacts:~~ ${DIAGNOSTICS_API_URL}/v1/artifacts/${args.ID}/`));
+    if (process.platform === 'darwin') {
+      console.log(appkit.terminal.markdown('###CMD + Click to open###'));
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
 function update() {}
 
 function init(appkit) {
@@ -743,6 +763,7 @@ function init(appkit) {
     .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
     .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
     .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
+    .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
     .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
 
   if (process.env.TAAS_BETA === 'true') {
