@@ -330,7 +330,6 @@ async function newRegister(appkit, args) {
     return true;
   };
 
-
   const questions = [
     {
       name: 'app',
@@ -351,10 +350,26 @@ async function newRegister(appkit, args) {
       validate: isRequired,
     },
     {
+      name: 'useAppImage',
+      type: 'list',
+      message: 'Use an Akkeris app\'s image?',
+      choices: ['Yes - use an app\'s latest image', 'No - specify an image'],
+      filter: input => (input === 'Yes - use an app\'s latest image'),
+    },
+    {
+      name: 'image',
+      type: 'input',
+      message: 'App name (for image):',
+      validate: validName,
+      when: answers => !!answers.useAppImage,
+      filter: input => `akkeris://${input}`,
+    },
+    {
       name: 'image',
       type: 'input',
       message: 'Image:',
       validate: isRequired,
+      when: answers => !answers.useAppImage,
     },
     {
       name: 'override',
