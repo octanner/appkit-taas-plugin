@@ -1,6 +1,6 @@
 const inquirer = require('inquirer');
 
-const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io';
+const { DIAGNOSTICS_API_URL } = process.env;
 const jsonType = { 'Content-Type': 'application/json' };
 const plainType = { 'Content-Type': 'text/plain' };
 
@@ -255,13 +255,12 @@ async function addHooks(appkit, args) {
   const app = args.a || args.app;
   try {
     const hooks = await appkit.api.get(`/apps/${app}/hooks`);
-    const needsRelease = !hooks.some(hook => (hook.url.indexOf('/v1/releasehook') > -1 && hook.url.indexOf('alamo-self-diagnostics') > -1));
-    const needsBuild = !hooks.some(hook => (hook.url.indexOf('/v1/buildhook') > -1 && hook.url.indexOf('alamo-self-diagnostics') > -1));
-
+    const needsRelease = !hooks.some(hook => (hook.url.indexOf('/v1/releasehook') > -1 && hook.url.indexOf('taas') > -1));
+    const needsBuild = !hooks.some(hook => (hook.url.indexOf('/v1/buildhook') > -1 && hook.url.indexOf('taas') > -1));
     let hook = {};
     if (needsRelease) {
       hook = {
-        url: `${process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io'}/v1/releasehook`,
+        url: `${DIAGNOSTICS_API_URL}/v1/releasehook`,
         active: true,
         secret: 'merpderp',
         events: ['release'],
@@ -271,13 +270,13 @@ async function addHooks(appkit, args) {
     }
     if (needsBuild) {
       hook = {
-        url: `${process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io'}/v1/buildhook`,
+        url: `${DIAGNOSTICS_API_URL}/v1/buildhook`,
         active: true,
         secret: 'merpderp',
         events: ['build'],
       };
       await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
-      console.log(appkit.terminal.markdown('^^ release hook added ^^'));
+      console.log(appkit.terminal.markdown('^^ build hook added ^^'));
     }
     console.log(appkit.terminal.markdown('^^ done ^^'));
   } catch (err) {
