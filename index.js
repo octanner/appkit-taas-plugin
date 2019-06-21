@@ -253,47 +253,6 @@ async function runInfo(appkit, args) {
   }
 }
 
-async function addHooks(appkit, args) {
-  const app = args.a || args.app;
-  try {
-    const hooks = await appkit.api.get(`/apps/${app}/hooks`);
-    const needsRelease = !hooks.some(hook => (
-      hook.url.indexOf('/v1/releasehook') > -1
-      && hook.url.indexOf('taas') > -1
-      && hook.url.indexOf('alamo-self-diagnostics') > -1
-    ));
-    const needsBuild = !hooks.some(hook => (
-      hook.url.indexOf('/v1/buildhook') > -1
-      && hook.url.indexOf('taas') > -1
-      && hook.url.indexOf('alamo-self-diagnostics') > -1
-    ));
-    let hook = {};
-    if (needsRelease) {
-      hook = {
-        url: `${DIAGNOSTICS_API_URL}/v1/releasehook`,
-        active: true,
-        secret: 'merpderp',
-        events: ['release'],
-      };
-      await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
-      console.log(appkit.terminal.markdown('^^ release hook added ^^'));
-    }
-    if (needsBuild) {
-      hook = {
-        url: `${DIAGNOSTICS_API_URL}/v1/buildhook`,
-        active: true,
-        secret: 'merpderp',
-        events: ['build'],
-      };
-      await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
-      console.log(appkit.terminal.markdown('^^ build hook added ^^'));
-    }
-    console.log(appkit.terminal.markdown('^^ done ^^'));
-  } catch (err) {
-    appkit.terminal.error(err);
-  }
-}
-
 async function newRegister(appkit, args) {
   // Validator Functions
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
@@ -484,7 +443,7 @@ async function newRegister(appkit, args) {
     const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
     args.app = answers.app; // eslint-disable-line
     appkit.terminal.vtable(resp);
-    addHooks(appkit, args);
+    // addHooks(appkit, args);
   } catch (err) {
     appkit.terminal.error(parseError(err));
   }
@@ -694,14 +653,14 @@ async function artifacts(appkit, args) {
 function update() {}
 
 function init(appkit) {
-  const hooksOpts = {
-    app: {
-      alias: 'a',
-      string: true,
-      description: 'app name.',
-      demand: true,
-    },
-  };
+  // const hooksOpts = {
+  //   app: {
+  //     alias: 'a',
+  //     string: true,
+  //     description: 'app name.',
+  //     demand: true,
+  //   },
+  // };
 
   const updateOpts = {
     property: {
@@ -772,7 +731,7 @@ function init(appkit) {
     .command('taas:config:unset ID VAR', 'Unset an environment variable', {}, unsetVar.bind(null, appkit))
     .command('taas:secret:create ID', 'Add a secret to a test', secretOpts, addSecret.bind(null, appkit))
     .command('taas:secret:remove ID', 'Remove a secret from a test', secretOpts, removeSecret.bind(null, appkit))
-    .command('taas:hooks:create', 'Add testing hooks to an app', hooksOpts, addHooks.bind(null, appkit))
+    // .command('taas:hooks:create', 'Add testing hooks to an app', hooksOpts, addHooks.bind(null, appkit))
     .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
     .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
     .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
