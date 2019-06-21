@@ -1,6 +1,8 @@
 const inquirer = require('inquirer');
 
-const { DIAGNOSTICS_API_URL } = process.env;
+// This will be removed when TaaS is made a first-class citizen
+const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io';
+
 const jsonType = { 'Content-Type': 'application/json' };
 const plainType = { 'Content-Type': 'text/plain' };
 
@@ -255,8 +257,16 @@ async function addHooks(appkit, args) {
   const app = args.a || args.app;
   try {
     const hooks = await appkit.api.get(`/apps/${app}/hooks`);
-    const needsRelease = !hooks.some(hook => (hook.url.indexOf('/v1/releasehook') > -1 && hook.url.indexOf('taas') > -1));
-    const needsBuild = !hooks.some(hook => (hook.url.indexOf('/v1/buildhook') > -1 && hook.url.indexOf('taas') > -1));
+    const needsRelease = !hooks.some(hook => (
+      hook.url.indexOf('/v1/releasehook') > -1
+      && hook.url.indexOf('taas') > -1
+      && hook.url.indexOf('alamo-self-diagnostics') > -1
+    ));
+    const needsBuild = !hooks.some(hook => (
+      hook.url.indexOf('/v1/buildhook') > -1
+      && hook.url.indexOf('taas') > -1
+      && hook.url.indexOf('alamo-self-diagnostics') > -1
+    ));
     let hook = {};
     if (needsRelease) {
       hook = {
@@ -649,6 +659,10 @@ async function images(appkit) {
 async function list(appkit) {
   try {
     const tests = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
+    if (!tests || tests.length === 0) {
+      appkit.terminal.error(appkit.terminal.markdown('No tests found. Register a test with ^^aka taas:tests:register^^'));
+      return;
+    }
     appkit.terminal.table(tests.map(test => ({
       id: test.id,
       test: `${test.job}-${test.jobspace}`,

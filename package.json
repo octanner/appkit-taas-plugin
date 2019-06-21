@@ -17,11 +17,11 @@
   },
   "homepage": "https://github.com/akkeris/taas-plugin#readme",
   "dependencies": {
-    "inquirer": "^6.2.2"
+    "inquirer": "^6.4.1"
   },
   "devDependencies": {
     "eslint": "^5.16.0",
     "eslint-config-airbnb-base": "^13.1.0",
-    "eslint-plugin-import": "^2.16.0"
+    "eslint-plugin-import": "^2.17.3"
   }
 }
