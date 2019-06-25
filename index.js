@@ -253,6 +253,63 @@ async function runInfo(appkit, args) {
   }
 }
 
+async function addHooks(appkit, args) {
+  try {
+    await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/hooks`, jsonType);
+    console.log(appkit.terminal.markdown('^^ done ^^'));
+    return; // If using updated TaaS backend then we're finished
+  } catch (err) {
+    if (err.code !== 404) {
+      appkit.terminal.error(parseError(err));
+      return;
+    }
+  }
+
+  // Response from backend was 404. Using old TaaS backend. Manually create hooks.
+  try {
+    const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const app = `${jobItem.app}-${jobItem.space}`;
+
+    const hooks = await appkit.api.get(`/apps/${app}/hooks`);
+    const needsRelease = !hooks.some(hook => (
+      hook.url.indexOf('/v1/releasehook') > -1
+      && (
+        hook.url.indexOf('taas') > -1 || hook.url.indexOf('alamo-self-diagnostics') > -1
+      )
+    ));
+    const needsBuild = !hooks.some(hook => (
+      hook.url.indexOf('/v1/buildhook') > -1
+      && (
+        hook.url.indexOf('taas') > -1 || hook.url.indexOf('alamo-self-diagnostics') > -1
+      )
+    ));
+    let hook = {};
+    if (needsRelease) {
+      hook = {
+        url: `${DIAGNOSTICS_API_URL}/v1/releasehook`,
+        active: true,
+        secret: 'merpderp',
+        events: ['release'],
+      };
+      await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
+      console.log(appkit.terminal.markdown('^^ release hook added ^^'));
+    }
+    if (needsBuild) {
+      hook = {
+        url: `${DIAGNOSTICS_API_URL}/v1/buildhook`,
+        active: true,
+        secret: 'merpderp',
+        events: ['build'],
+      };
+      await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
+      console.log(appkit.terminal.markdown('^^ build hook added ^^'));
+    }
+    console.log(appkit.terminal.markdown('^^ done ^^'));
+  } catch (err) {
+    appkit.terminal.error(err);
+  }
+}
+
 async function newRegister(appkit, args) {
   // Validator Functions
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
@@ -347,7 +404,7 @@ async function newRegister(appkit, args) {
       name: 'override',
       type: 'list',
       message: 'Override command in docker image?',
-      choices: ['Yes', 'No'],
+      choices: ['No', 'Yes'],
       filter: input => (input === 'Yes'),
     },
     {
@@ -361,7 +418,7 @@ async function newRegister(appkit, args) {
       name: 'autoPromote',
       type: 'list',
       message: 'Automatically promote?',
-      choices: ['Yes', 'No'],
+      choices: ['No', 'Yes'],
       filter: input => (input === 'Yes'),
     },
     {
@@ -441,9 +498,9 @@ async function newRegister(appkit, args) {
         .filter(e => e.name && e.value),
     };
     const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
-    args.app = answers.app; // eslint-disable-line
     appkit.terminal.vtable(resp);
-    // addHooks(appkit, args);
+    args.ID = `${answers.job}-${answers.jobSpace}`; // eslint-disable-line
+    addHooks(appkit, args); // This will be removed soon
   } catch (err) {
     appkit.terminal.error(parseError(err));
   }
@@ -653,15 +710,6 @@ async function artifacts(appkit, args) {
 function update() {}
 
 function init(appkit) {
-  // const hooksOpts = {
-  //   app: {
-  //     alias: 'a',
-  //     string: true,
-  //     description: 'app name.',
-  //     demand: true,
-  //   },
-  // };
-
   const updateOpts = {
     property: {
       alias: 'p',
@@ -731,7 +779,7 @@ function init(appkit) {
     .command('taas:config:unset ID VAR', 'Unset an environment variable', {}, unsetVar.bind(null, appkit))
     .command('taas:secret:create ID', 'Add a secret to a test', secretOpts, addSecret.bind(null, appkit))
     .command('taas:secret:remove ID', 'Remove a secret from a test', secretOpts, removeSecret.bind(null, appkit))
-    // .command('taas:hooks:create', 'Add testing hooks to an app', hooksOpts, addHooks.bind(null, appkit))
+    .command('taas:hooks:create ID', 'Add testing hooks to a test\'s target app', {}, addHooks.bind(null, appkit))
     .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
     .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
     .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
