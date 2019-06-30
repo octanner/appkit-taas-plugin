@@ -22,6 +22,31 @@ function parseError(error) {
   }
 }
 
+async function audits(appkit, args) {
+  const id = args.ID
+  const audits = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${id}/audits`);
+  var newtable = []
+  audits.forEach (function(audit) {
+    var entry ={} 
+    entry.date = audit.created_at
+    entry.user = audit.audituser
+    entry.type = audit.audittype
+    entry.key = audit.auditkey
+    if (entry.type == "properties"){
+       newvalue = JSON.parse(audit.newvalue)
+       entry.newvalue = `IMAGE: ${newvalue.image}\nPIPELINE: ${newvalue.pipelinename}\nTRANSITION FROM: ${newvalue.transitionfrom}\nTRANSITION TO: ${newvalue.transitionto}\nTIMEOUT: ${newvalue.timeout}\nSTART DELAY: ${newvalue.startdelay}\nSLACK CHANNEL: ${newvalue.slackchannel}\nCOMMAND: ${newvalue.command || "Default command in image"}`
+    } else if (entry.type == "register" || entry.type=="destroy"){
+       newvalue = JSON.parse(audit.newvalue)
+       entry.newvalue = `APP: ${newvalue.app}-${newvalue.space}\nJOB: ${newvalue.job}-${newvalue.jobspace}\nIMAGE: ${newvalue.image}\nPIPELINE: ${newvalue.pipelinename}\nTRANSITION FROM: ${newvalue.transitionfrom}\nTRANSITION TO: ${newvalue.transitionto}\nTIMEOUT: ${newvalue.timeout}\nSTART DELAY: ${newvalue.startdelay}\nSLACK CHANNEL: ${newvalue.slackchannel}\nCOMMAND: ${newvalue.command || "Default command in image"}` 
+    }else{
+       entry.newvalue = audit.newvalue
+    }
+    newtable.push(entry)
+  });
+  appkit.terminal.table(newtable);
+}
+
+
 async function multiUnSet(appkit, args) {
   const prefix = args.p || args.prefix;
   const suffix = args.s || args.suffix;
@@ -174,7 +199,7 @@ async function setVar(appkit, args) {
 
 async function unsetVar(appkit, args) {
   try {
-    const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config/${args.VAR}`, jsonType);
+    const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config/${args.VAR}`);
     appkit.terminal.vtable(resp);
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -631,7 +656,7 @@ async function listConfig(appkit, args) {
 
 async function deleteTest(appkit, args) {
   try {
-    await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`);
     console.log(appkit.terminal.markdown('^^ deleted ^^'));
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -789,6 +814,7 @@ function init(appkit) {
   if (process.env.TAAS_BETA === 'true') {
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
     appkit.args.command('taas:config:multiunset KEY', 'BETA: unset an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiUnSet.bind(null, appkit));
+    appkit.args.command('taas:tests:audits ID', 'BETA: Get audits for a test', {}, audits.bind(null, appkit));
   }
 }
 
