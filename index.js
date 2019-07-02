@@ -23,29 +23,39 @@ function parseError(error) {
 }
 
 async function audits(appkit, args) {
-  const id = args.ID
-  const audits = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${id}/audits`);
-  var newtable = []
-  audits.forEach (function(audit) {
-    var entry ={} 
-    entry.date = audit.created_at
-    entry.user = audit.audituser
-    entry.type = audit.audittype
-    entry.key = audit.auditkey
-    if (entry.type == "properties"){
-       newvalue = JSON.parse(audit.newvalue)
-       entry.newvalue = `IMAGE: ${newvalue.image}\nPIPELINE: ${newvalue.pipelinename}\nTRANSITION FROM: ${newvalue.transitionfrom}\nTRANSITION TO: ${newvalue.transitionto}\nTIMEOUT: ${newvalue.timeout}\nSTART DELAY: ${newvalue.startdelay}\nSLACK CHANNEL: ${newvalue.slackchannel}\nCOMMAND: ${newvalue.command || "Default command in image"}`
-    } else if (entry.type == "register" || entry.type=="destroy"){
-       newvalue = JSON.parse(audit.newvalue)
-       entry.newvalue = `APP: ${newvalue.app}-${newvalue.space}\nJOB: ${newvalue.job}-${newvalue.jobspace}\nIMAGE: ${newvalue.image}\nPIPELINE: ${newvalue.pipelinename}\nTRANSITION FROM: ${newvalue.transitionfrom}\nTRANSITION TO: ${newvalue.transitionto}\nTIMEOUT: ${newvalue.timeout}\nSTART DELAY: ${newvalue.startdelay}\nSLACK CHANNEL: ${newvalue.slackchannel}\nCOMMAND: ${newvalue.command || "Default command in image"}` 
-    }else{
-       entry.newvalue = audit.newvalue
+  try {
+    const results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/audits`);
+    if (!results || results.length < 1) {
+      appkit.terminal.error(appkit.terminal.markdown(`No audits found for ***${args.ID}***`));
+      return;
     }
-    newtable.push(entry)
-  });
-  appkit.terminal.table(newtable);
+    appkit.terminal.table(results.map((audit) => {
+      const entry = {
+        date: audit.created_at,
+        user: audit.audituser,
+        type: audit.audittype,
+        key: audit.auditkey,
+      };
+      if (entry.type !== 'properties' && entry.type !== 'register' && entry.type !== 'destroy') {
+        entry.newvalue = audit.newvalue;
+      } else {
+        const newvalue = JSON.parse(audit.newvalue);
+        entry.newval = `${audit.audittype !== 'properties' ? `APP: ${newvalue.app}-${newvalue.space}\nJOB: ${newvalue.job}-${newvalue.jobspace}\n` : ''}`;
+        entry.newval += `IMAGE: ${newvalue.image}\n`;
+        entry.newval += `PIPELINE: ${newvalue.pipelinename}\n`;
+        entry.newval += `TRANSITION FROM: ${newvalue.transitionfrom}\n`;
+        entry.newval += `TRANSITION TO: ${newvalue.transitionto}\n`;
+        entry.newval += `TIMEOUT: ${newvalue.timeout}\n`;
+        entry.newval += `START DELAY: ${newvalue.startdelay}\n`;
+        entry.newval += `SLACK CHANNEL: ${newvalue.slackchannel}\n`;
+        entry.newval += `COMMAND: ${newvalue.command || 'Default command in image'}`;
+      }
+      return entry;
+    }));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
 }
-
 
 async function multiUnSet(appkit, args) {
   const prefix = args.p || args.prefix;
