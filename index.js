@@ -101,7 +101,7 @@ async function multiUnSet(appkit, args) {
       console.log('Continuing ... ');
 
       matches.forEach(async (currentMatch) => {
-        const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config/${args.KEY}`);
+        const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config/${args.KEY}`);
         appkit.terminal.vtable(resp);
       });
     }
