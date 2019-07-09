@@ -1,767 +1,837 @@
-"use strict"
-var DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || "https://alamo-self-diagnostics.octanner.io"
+const inquirer = require('inquirer');
 
-function setvar(appkit, args){
-   var configvar = {}
-   configvar.varname  = args.KVPAIR.split("=")[0]
-   configvar.varvalue = args.KVPAIR.split("=")[1]
-   
-   appkit.api.post(JSON.stringify(configvar), DIAGNOSTICS_API_URL+"/v1/diagnostic/"+args.ID+"/config", function(err, resp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    }
-                                                appkit.terminal.vtable(resp);
-   })
-  
+// This will be removed when TaaS is made a first-class citizen
+const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io';
+
+const jsonType = { 'Content-Type': 'application/json' };
+const plainType = { 'Content-Type': 'text/plain' };
+
+function parseError(error) {
+  if (error.body) {
+    try {
+      const json = JSON.parse(error.body.toString());
+      if (json.response) {
+        return json.response;
+      }
+      return json;
+    } catch (err) {
+      return error.body.toString();
+    }
+  } else {
+    return error.toString();
+  }
 }
 
-
-
-function multiset(appkit, args){
-  var prefix  = args.p || args.prefix
-  var suffix  = args.s || args.suffix
-  if (!prefix && !suffix){
-       console.log("Must specify either prefix or suffix")
-       return
-   }
-   if (prefix && suffix){
-       console.log("Can not specify both prefix and suffix")
-       return
-   }
-   var configvar = {}
-   configvar.varname  = args.KVPAIR.split("=")[0]
-   configvar.varvalue = args.KVPAIR.split("=")[1]
-
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostics?simple=true', {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-        var matches = [];
-        resp.forEach(function(testitem) {
-            var testname = testitem.job + "-" + testitem.jobspace
-           if (prefix){
-            if (testname.startsWith(prefix)) {
-                matches.push(testname)
-            }
-           }
-           if (suffix){
-            if (testname.endsWith(suffix)) {
-                matches.push(testname)
-            }
-           }
-        });
-        console.log("About to set "+configvar.varname+" to "+configvar.varvalue+" for:")
-        console.log(matches.join("\n"))
-        var continueresp=""
-        newask("Continue? (Y/N)", function(continuex) {
-         continueresp=continuex
-         if  (continueresp=="Y") {
-             console.log("continuing ... ")
-             for(var currentmatch of matches) {
-                 appkit.api.post(JSON.stringify(configvar), DIAGNOSTICS_API_URL+"/v1/diagnostic/"+currentmatch+"/config", function(err, resp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    }
-                                                appkit.terminal.vtable(resp);
-                 })
-             }
-         }
-        });
-    });
+async function audits(appkit, args) {
+  try {
+    const results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/audits`);
+    if (!results || results.length < 1) {
+      appkit.terminal.error(appkit.terminal.markdown(`No audits found for ***${args.ID}***`));
+      return;
+    }
+    appkit.terminal.table(results.map((audit) => {
+      const entry = {
+        date: audit.created_at,
+        user: audit.audituser,
+        type: audit.audittype,
+        key: audit.auditkey,
+      };
+      if (entry.type !== 'properties' && entry.type !== 'register' && entry.type !== 'destroy') {
+        entry.newvalue = audit.newvalue;
+      } else {
+        const newvalue = JSON.parse(audit.newvalue);
+        entry.newval = `${audit.audittype !== 'properties' ? `APP: ${newvalue.app}-${newvalue.space}\nJOB: ${newvalue.job}-${newvalue.jobspace}\n` : ''}`;
+        entry.newval += `IMAGE: ${newvalue.image}\n`;
+        entry.newval += `PIPELINE: ${newvalue.pipelinename}\n`;
+        entry.newval += `TRANSITION FROM: ${newvalue.transitionfrom}\n`;
+        entry.newval += `TRANSITION TO: ${newvalue.transitionto}\n`;
+        entry.newval += `TIMEOUT: ${newvalue.timeout}\n`;
+        entry.newval += `START DELAY: ${newvalue.startdelay}\n`;
+        entry.newval += `SLACK CHANNEL: ${newvalue.slackchannel}\n`;
+        entry.newval += `COMMAND: ${newvalue.command || 'Default command in image'}`;
+      }
+      return entry;
+    }));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
 }
 
-function unsetvar(appkit, args){
-   appkit.http.delete(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + args.ID+'/config/'+args.VAR, {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-                                                appkit.terminal.vtable(resp);
-    })
-}
+async function multiUnSet(appkit, args) {
+  const prefix = args.p || args.prefix;
+  const suffix = args.s || args.suffix;
 
-function addsecret(appkit, args){
-  var plan  = args.p || args.plan
-  var addonpart= plan.split(":")[0]
-  var planpart = plan.split(":")[1]
-  appkit.api.get("/addon-services/"+addonpart+"/plans/"+planpart,
-         function(err, resp) {
-            if (err) {
-               return appkit.terminal.error(err);
-           }
-          appkit.api.post(null, DIAGNOSTICS_API_URL+"/v1/diagnostic/"+args.ID+"/bind/"+resp.spec, function(err, resp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    }
-                                                appkit.terminal.vtable(resp);
-          })
-  })
-}
+  if (!prefix && !suffix) {
+    console.log('Must specify either prefix or suffix');
+    return;
+  }
 
-function removesecret(appkit, args){
-  var plan  = args.p || args.plan
-  var addonpart= plan.split(":")[0]
-  var planpart = plan.split(":")[1]
-  appkit.api.get("/addon-services/"+addonpart+"/plans/"+planpart,
-         function(err, resp) {
-            if (err) {
-               return appkit.terminal.error(err);
-           }
-          appkit.http.delete(DIAGNOSTICS_API_URL+"/v1/diagnostic/"+args.ID+"/bind/"+resp.spec, {
-                           "Content-Type": "application/json"
-                          }, function(err, resp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    }
-                                                appkit.terminal.vtable(resp);
-          })
-  })
-}
+  if (prefix && suffix) {
+    console.log('Can not specify both prefix and suffix');
+    return;
+  }
 
+  try {
+    const diagnostics = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
 
+    const matches = diagnostics.reduce((result, testitem) => {
+      const testname = `${testitem.job}-${testitem.jobspace}`;
+      if ((prefix && testname.startsWith(prefix)) || (suffix && testname.endsWith(suffix))) {
+        result.push(testname);
+      }
+      return result;
+    }, []);
 
-function trigger(appkit, args) {
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/'+args.ID , {
-            "Content-Type": "text/plain"
-        }, function(err, resp) {
-            if (err) {
-               return appkit.terminal.error(err);
-           }
-               appkit.api.get('/apps/'+resp.app+'-'+resp.space+'/releases',
-                function(err, releasesresp) {
-                    if (err) {
-                      return appkit.terminal.error(err);
-                    }
-               appkit.api.get('/apps/'+resp.app+'-'+resp.space+'/builds',
-                function(err, buildsresp) {
-                    if (err) {
-                      return appkit.terminal.error(err);
-                    }
-                        var hook = {}
-                        hook.release={}
-                        hook.build={}
-                        hook.app={}
-                        hook.action=resp.action
-                        hook.release.result=resp.result
-                        hook.app.id=resp.id
-                        hook.app.name=resp.app
-                        hook.space={}
-                        hook.space.name=resp.space
-                        hook.release.id=releasesresp.pop().id
-                        if (buildsresp.length > 0){
-                                 hook.build.id=buildsresp.pop().id
-                         }else{
-                                 hook.build.id = ""
-                        }
-                                                   appkit.api.post(JSON.stringify(hook), DIAGNOSTICS_API_URL + '/v1/releasehook', function(err, runresp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    } 
-                           console.log(appkit.terminal.markdown("^^ run initiated ^^"))
-                            })
-                     })
-                  })
-       })
-}
-
-
-
-
-
-function rerun(appkit, args) {
-
-
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostics/runs/info/'+args.ID , {
-            "Content-Type": "text/plain"
-        }, function(err, resp) {
-            if (err) {
-               return appkit.terminal.error(err);
-           }
-                     var querystring = "space="+resp._source.space+"&app="+resp._source.app+"&action=release&result=succeeded&buildid="+resp._source.buildid
-                     appkit.http.get(DIAGNOSTICS_API_URL +"/v1/diagnostic/rerun?"+querystring, {}, function(err, resp) {
-                                                     if (err) {
-                                                         return appkit.terminal.error(err);
-                                                     }
-                           console.log(appkit.terminal.markdown("^^ rerun initiated ^^"))
-                     })
-
-    })
-
-}
-
-function runinfo(appkit, args){
-
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostics/runs/info/'+args.ID , {
-            "Content-Type": "text/plain"
-        }, function(err, resp) {
-            if (err) {
-               return appkit.terminal.error(err);
-           }
-    delete resp._source.logs
-    appkit.terminal.vtable(resp._source)
-          
-    })
-
-}
-
-
-function addhooks(appkit, args) {
-
-    var app = args.a || args.app 
-    appkit.api.get("/apps/"+app+"/hooks", function(err, resp){
-    var needsrelease = true
-    var needsbuild = true
-    resp.forEach(function(hook) {
-          if(hook.url.indexOf("/v1/releasehook") > -1 && hook.url.indexOf("alamo-self-diagnostics") > -1 ) {
-              needsrelease = false
-           }
-          if(hook.url.indexOf("/v1/buildhook") > -1  && hook.url.indexOf("alamo-self-diagnostics") > -1  ) {
-              needsbuild = false
-           }
-      });
-
-    var hookspec = {}
-   if (needsrelease) {
-    hookspec.url=   process.env.DIAGNOSTICS_API_URL || "https://alamo-self-diagnostics.octanner.io"
-    hookspec.url=   hookspec.url+ "/v1/releasehook"
-    hookspec.active = true
-    hookspec.secret = "merpderp"
-    var events = []
-    events.push("release")
-    hookspec.events=events
-    appkit.api.post(JSON.stringify(hookspec), "/apps/"+app+"/hooks", function(err, resp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    }
-        console.log(appkit.terminal.markdown("^^ release hook added ^^"))
-    })
-   }
-   if (needsbuild){
-    hookspec.url=   process.env.DIAGNOSTICS_API_URL || "https://alamo-self-diagnostics.octanner.io"
-    hookspec.url=   hookspec.url+ "/v1/buildhook"
-    hookspec.active = true
-    hookspec.secret = "merpderp"
-    var events = []
-    events.push("build")
-    hookspec.events=events
-    appkit.api.post(JSON.stringify(hookspec), "/apps/"+app+"/hooks", function(err, resp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    }
-        console.log(appkit.terminal.markdown("^^ build hook added ^^"))
-    })
-   }
-   console.log(appkit.terminal.markdown("^^ done ^^"))
-  })
-}
-
-
-
-function newregister(appkit, args){
-     var answerappfull = "" 
-     var answerjob = ""
-     var answerjobspace = ""
-     var answerimage = ""
-     var answertfrom = ""
-     var answertto = ""
-     var answertimeout = 90
-     var answerstartdelay = 15
-     var answerenvlist = ""
-     var answerpipelinename = ""
-     var answerslackchannel = ""
-     newask("App Name", function(appfull) {
-         answerappfull=appfull
-
-     newask("Job Name", function(job) {
-         answerjob=job
-
-     newask("Job Space", function(jobspace) {
-         answerjobspace=jobspace
-
-     newask("Image", function(image) {
-         answerimage=image
-
-     newask("Pipeline Name ('manual' for manual promotion)", function(pipelinename) {
-         answerpipelinename=pipelinename
-
-     newask("Transition From ('manual' for manual promotion)", function(tfrom) {
-         answertfrom=tfrom
-
-    newask("Transition To ('manual' for manual promotion)", function(tto) {
-         answertto=tto
-
-    newask("Timeout", function(timeout) {
-         answertimeout=timeout
-
-    newask("Start Delay", function(startdelay) {
-         answerstartdelay=startdelay
- 
-    newask("Slack Channel (no leading #)", function(slackchannel){
-         answerslackchannel=slackchannel
-
-    newask("Environment Variables", function(envlist) {
-         answerenvlist = envlist
-
-          var appa = appfull.split("-")
-          var app=appa[0]
-          var cutspace=appa.shift()
-          var space=appa.join("-")
-                                                var diagnostic = {}
-                                                diagnostic.app = app
-                                                diagnostic.space = space
-                                                diagnostic.action = "release"
-                                                diagnostic.result = "succeeded"
-                                                diagnostic.job = job
-                                                diagnostic.jobspace = jobspace
-                                                diagnostic.image = image
-                                                diagnostic.pipelinename = answerpipelinename
-                                                diagnostic.transitionfrom = answertfrom
-                                                diagnostic.transitionto = answertto
-                                                diagnostic.timeout = parseInt(answertimeout, 10)
-                                                diagnostic.startdelay = parseInt(answerstartdelay, 10)
-                                                diagnostic.slackchannel = slackchannel
-                                                if (answerenvlist.length  > 0) {
-                                                var env = []
-                                                envlist = answerenvlist.replace('"','')
-                                                var envlista = envlist.toString().split(" ")
-                                                envlista.forEach(function(pair) {
-                                                    var envitem = {}
-                                                    var paira = pair.split("=")
-                                                    envitem.name = paira[0]
-                                                    envitem.value = paira[1]
-                                                    env.push(envitem)
-                                                });
-
-                                                diagnostic.env = env
-                                                }
-
-                                                args.app=appfull
-
-
-                                                appkit.api.post(JSON.stringify(diagnostic), DIAGNOSTICS_API_URL + '/v1/diagnostic', function(err, resp) {
-                                                    if (err) {
-                                                        return appkit.terminal.error(err);
-                                                    }
-                                                    args.app=appfull
-                                                    //addhooks(appkit, args)
-                                                    //var generator =  addhooksgen(appkit, args)
-                                                    //setTimeout(function () {
-                                                    //      generator.next()
-                                                    //}, 5000)
-                                                    appkit.terminal.vtable(resp);
-                                                    addhooks(appkit, args)
-                                                 })
-
-})
-})
-})
-})
-})
-})
-})
-})
-})
-})
-})
-}
-function newask(question, cb) {
-
-const readline = require('readline');
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-rl.question(question+": ", (answer) => {
-
-  rl.close();
-  cb(answer)
-});
-
-}
-
-
-
-function getlogs(appkit, args) {
-    var uuidtoget = ""
-    if (isUUID(args.ID)) {
-        uuidtoget = args.ID
-        appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/logs/' + uuidtoget + '/array', {
-            "Content-Type": "text/plain"
-        }, function(err3, resp3) {
-            if (err3) {
-                return appkit.terminal.error(err3);
-            }
-            resp3.forEach(function(line) {
-                console.log(line)
-            })
-        })
-    } else {
-        appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + args.ID, {
-            "Content-Type": "application/json"
-        }, function(err, resp) {
-            if (err) {
-                return appkit.terminal.error(err);
-            }
-            appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/jobspace/' + resp.jobspace + '/job/' + resp.job + '/runs', {
-                "Content-Type": "application/json"
-            }, function(err2, resp2) {
-                if (err2) {
-                    return appkit.terminal.error(err2);
-                }
-                if (resp2.runs === null) {
-                      return appkit.terminal.error("no runs")
-                    }else{ 
-                     uuidtoget = resp2.runs.pop().id
-                     appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/logs/' + uuidtoget + '/array', {
-                         "Content-Type": "text/plain"
-                      }, function(err3, resp3) {
-                           if (err3) {
-                              return appkit.terminal.error(err3);
-                            }
-                         resp3.forEach(function(line) {
-                         console.log(line)
-                          })
-                       })
-                  }
-            })
-        })
+    if (matches.length === 0) {
+      console.log(`No matches for the ${prefix ? 'prefix' : 'suffix'} ${prefix || suffix}`);
+      return;
     }
 
+    console.log(`About to unset ${args.KEY} for:`);
+    console.log(matches.join('\n'));
 
-
-}
-
-
-function listruns(appkit, args) {
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + args.ID, {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-        appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/jobspace/' + resp.jobspace + '/job/' + resp.job + '/runs', {
-            "Content-Type": "application/json"
-        }, function(err2, resp2) {
-            if (err2) {
-                return appkit.terminal.error(err2);
-            }
-            var runs = []
-            if (! resp2.runs){ return appkit.terminal.error("no runs")}
-            resp2.runs.forEach(function(runitem) {
-                var run = {}
-                run.runid = runitem.id
-                run.app = runitem.app + "-" + runitem.space
-                run.test = runitem.job + "-" + runitem.jobspace
-                run.time = runitem.hrtimestamp
-                
-                if (runitem.overallstatus == "success") {
-                     run.status=appkit.terminal.markdown("^^ success ^^")
-                }else{
-                    run.status = run.status=appkit.terminal.markdown("!! "+runitem.overallstatus+" !!")
-                } 
-                 
-                runs.push(run)
-            })
-            appkit.terminal.table(runs)
-        })
-    })
-}
-
-function updatejob(appkit, args) {
-    var property = args.p || args.property
-    var value = args.v || args.value
-    var newdef = ""
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + args.ID, {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-        if (property == "timeout" || property == "startdelay") {
-            resp[property] = parseInt(value, 10)
-        } else if (property == "env") {
-            var env = []
-            var envlista = value.toString().split(" ")
-            envlista.forEach(function(pair) {
-                var envitem = {}
-                var paira = pair.split("=")
-                envitem.name = paira[0]
-                envitem.value = paira[1]
-                env.push(envitem)
-            });
-
-            resp[property] = env
-        } else {
-            resp[property] = value
-        }
-       
-        newdef = JSON.stringify(resp)
-        appkit.api.patch(newdef, DIAGNOSTICS_API_URL + '/v1/diagnostic', function(err2, resp2) {
-
-            if (err2) {
-                return appkit.terminal.error(err2);
-            }
-            appkit.terminal.vtable(resp2)
-
-        })
-
-    })
-
-}
-
-function job(appkit, args) {
-    var jobname = args.ID
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + jobname, {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-        var jobitem = {}
-        jobitem.id = resp.id
-        jobitem.test = resp.job + "-" + resp.jobspace
-        jobitem.app = resp.app + "-" + resp.space
-        jobitem.action = resp.action
-        jobitem.result = resp.result
-        jobitem.image = resp.image
-        jobitem.pipelinename = resp.pipelinename
-        jobitem.transitionfrom = resp.transitionfrom
-        jobitem.transitionto = resp.transitionto
-        jobitem.timeout = resp.timeout
-        jobitem.startdelay = resp.startdelay
-        jobitem.slackchannel = resp.slackchannel
-        console.log(appkit.terminal.markdown("^^ properties: ^^"))
-        appkit.terminal.vtable(jobitem)
-        console.log(appkit.terminal.markdown("^^ env: ^^"))
-        appkit.terminal.table(resp.env)
+    const { confirm } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Continue?',
+      default: false,
     });
 
+    if (confirm) {
+      console.log('Continuing ... ');
+
+      matches.forEach(async (currentMatch) => {
+        const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config/${args.KEY}`);
+        appkit.terminal.vtable(resp);
+      });
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
 }
 
-function listconfig(appkit, args) {
-    var jobname = args.ID
-    var simple = args.s || args.simple
-    var exports = args.e || args.exports
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + jobname, {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-       if (!simple && !exports) {
-        appkit.terminal.table(resp.env)
-       }
-       if (simple) {
-        resp.env.forEach(function(envvar){
-            console.log(envvar.name + "="+envvar.value)
-         })
-       }
-       if (exports) {
-        resp.env.forEach(function(envvar){
-            console.log("export "+envvar.name + "="+envvar.value)
-         })
-       } 
+
+async function multiSet(appkit, args) {
+  const prefix = args.p || args.prefix;
+  const suffix = args.s || args.suffix;
+
+  if (!prefix && !suffix) {
+    console.log('Must specify either prefix or suffix');
+    return;
+  }
+
+  if (prefix && suffix) {
+    console.log('Can not specify both prefix and suffix');
+    return;
+  }
+
+  if (args.KVPAIR.split('=').length !== 2 || args.KVPAIR.split('=')[0] === '' || args.KVPAIR.split('=')[1] === '') {
+    appkit.terminal.error('Invalid key/value pair.');
+    return;
+  }
+
+  if (args.KVPAIR.match(/\s/g)) {
+    appkit.terminal.error('Whitespace not allowed in key/value pair.');
+    return;
+  }
+
+  const configvar = {
+    varname: args.KVPAIR.split('=')[0],
+    varvalue: args.KVPAIR.split('=')[1],
+  };
+
+  try {
+    const diagnostics = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
+
+    const matches = diagnostics.reduce((result, testitem) => {
+      const testname = `${testitem.job}-${testitem.jobspace}`;
+      if ((prefix && testname.startsWith(prefix)) || (suffix && testname.endsWith(suffix))) {
+        result.push(testname);
+      }
+      return result;
+    }, []);
+
+    if (matches.length === 0) {
+      console.log(`No matches for the ${prefix ? 'prefix' : 'suffix'} ${prefix || suffix}`);
+      return;
+    }
+
+    console.log(`About to set ${configvar.varname} to ${configvar.varvalue} for:`);
+    console.log(matches.join('\n'));
+
+    const { confirm } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Continue?',
+      default: false,
     });
 
-}
+    if (confirm) {
+      console.log('Continuing ... ');
 
-function deletetest(appkit, args) {
-    appkit.http.delete(DIAGNOSTICS_API_URL + '/v1/diagnostic/' + args.ID, {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-        console.log(appkit.terminal.markdown("^^ deleted ^^"))
-    });
-
-}
-
-function colorize(text, colorname){
-
-     return text
-}
-function images(appkit, args) {
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostics?simple=true', {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-        var shorttests = [];
-        var colorlist = ["","green","blue","yellow","orange","purple","red"]
-        var currentcolor = 0
-        var currentimage =""
-        var colorimagemap={}
-
-        resp.forEach(function(testitem) {
-            var shorttest = {};
-            var imagearray = []
-            imagearray = testitem.image.split('/')
-            var imagenameandtag=""
-            imagenameandtag =(imagearray[(imagearray.length)-1])
-            if (imagenameandtag != currentimage && ! colorimagemap[imagenameandtag] > 0){
-                 currentcolor = currentcolor +1
-                 colorimagemap[imagenameandtag]=currentcolor
-            }
-            currentimage=imagenameandtag
-            shorttest.image = colorize(imagenameandtag,colorlist[colorimagemap[imagenameandtag]]||colorlist[currentcolor])
-            shorttest.test = testitem.job + "-" + testitem.jobspace
-            shorttest.app = testitem.app + "-" + testitem.space
-            shorttest.id = testitem.id
-            shorttests.push(shorttest)
-       
-        });
-        appkit.terminal.table(shorttests)
-
-    });
-}
-
-
-function list(appkit, args) {
-    appkit.http.get(DIAGNOSTICS_API_URL + '/v1/diagnostics?simple=true', {
-        "Content-Type": "application/json"
-    }, function(err, resp) {
-        if (err) {
-            return appkit.terminal.error(err);
-        }
-        var shorttests = [];
-        resp.forEach(function(testitem) {
-            var shorttest = {};
-            shorttest.id = testitem.id
-            shorttest.test = testitem.job + "-" + testitem.jobspace
-            shorttest.app = testitem.app + "-" + testitem.space
-            shorttest.action = testitem.action
-            shorttest.result = testitem.result
-            shorttests.push(shorttest)
-        });
-        appkit.terminal.table(shorttests)
-
-    });
-}
-
-
-function update() {}
-
-
-function isEmpty(str) {
-    return (!str || 0 === str.length);
+      matches.forEach(async (currentMatch) => {
+        const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config`);
+        appkit.terminal.vtable(resp);
+      });
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
 }
 
 function isUUID(str) {
-    return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str)
-
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
 }
 
+async function setVar(appkit, args) {
+  if (args.KVPAIR.split('=').length !== 2 || args.KVPAIR.split('=')[0] === '' || args.KVPAIR.split('=')[1] === '') {
+    appkit.terminal.error('Invalid key/value pair.');
+    return;
+  }
+
+  if (args.KVPAIR.match(/\s/g)) {
+    appkit.terminal.error('Whitespace not allowed in key/value pair.');
+    return;
+  }
+
+  const configvar = {
+    varname: args.KVPAIR.split('=')[0],
+    varvalue: args.KVPAIR.split('=')[1],
+  };
+
+  try {
+    const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config`);
+    appkit.terminal.vtable(resp);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function unsetVar(appkit, args) {
+  try {
+    const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config/${args.VAR}`);
+    appkit.terminal.vtable(resp);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function addSecret(appkit, args) {
+  try {
+    const plan = args.p || args.plan;
+    const addonpart = plan.split(':')[0];
+    const planpart = plan.split(':')[1];
+    const { spec } = await appkit.api.get(`/addon-services/${addonpart}/plans/${planpart}`);
+    const resp = await appkit.api.post(null, `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`);
+    appkit.terminal.vtable(resp);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function removeSecret(appkit, args) {
+  try {
+    const plan = args.p || args.plan;
+    const addonpart = plan.split(':')[0];
+    const planpart = plan.split(':')[1];
+    const { spec } = await appkit.api.get(`/addon-services/${addonpart}/plans/${planpart}`);
+    const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`, jsonType);
+    appkit.terminal.vtable(resp);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function trigger(appkit, args) {
+  try {
+    const {
+      app, space, id, action, result,
+    } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, plainType);
+    const releases = await appkit.api.get(`/apps/${app}-${space}/releases`);
+    const builds = await appkit.api.get(`/apps/${app}-${space}/builds`);
+    const hook = {
+      action,
+      app: { id, name: app },
+      space: { name: space },
+      release: { result, id: releases.pop().id },
+      build: { id: builds.length > 0 ? builds.pop().id : '' },
+    };
+    await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/releasehook`);
+    console.log(appkit.terminal.markdown('^^ run initiated ^^'));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function reRun(appkit, args) {
+  try {
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    const query = `space=${source.space}&app=${source.app}&action=release&result=succeeded&buildid=${source.buildid}`;
+    await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/rerun?${query}`, {});
+    console.log(appkit.terminal.markdown('^^ rerun initiated ^^'));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function runInfo(appkit, args) {
+  try {
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    if (typeof source.job === 'undefined' || source.job === '') {
+      appkit.terminal.error(appkit.terminal.markdown('!!Invalid run ID!!'));
+      return;
+    }
+    delete source.logs;
+    appkit.terminal.vtable(source);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function addHooks(appkit, args) {
+  try {
+    await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/hooks`, jsonType);
+    console.log(appkit.terminal.markdown('^^ done ^^'));
+    return; // If using updated TaaS backend then we're finished
+  } catch (err) {
+    if (err.code !== 404) {
+      appkit.terminal.error(parseError(err));
+      return;
+    }
+  }
+
+  // Response from backend was 404. Using old TaaS backend. Manually create hooks.
+  try {
+    const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const app = `${jobItem.app}-${jobItem.space}`;
+
+    const hooks = await appkit.api.get(`/apps/${app}/hooks`);
+    const needsRelease = !hooks.some(hook => (
+      hook.url.indexOf('/v1/releasehook') > -1
+      && (
+        hook.url.indexOf('taas') > -1 || hook.url.indexOf('alamo-self-diagnostics') > -1
+      )
+    ));
+    const needsBuild = !hooks.some(hook => (
+      hook.url.indexOf('/v1/buildhook') > -1
+      && (
+        hook.url.indexOf('taas') > -1 || hook.url.indexOf('alamo-self-diagnostics') > -1
+      )
+    ));
+    let hook = {};
+    if (needsRelease) {
+      hook = {
+        url: `${DIAGNOSTICS_API_URL}/v1/releasehook`,
+        active: true,
+        secret: 'merpderp',
+        events: ['release'],
+      };
+      await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
+      console.log(appkit.terminal.markdown('^^ release hook added ^^'));
+    }
+    if (needsBuild) {
+      hook = {
+        url: `${DIAGNOSTICS_API_URL}/v1/buildhook`,
+        active: true,
+        secret: 'merpderp',
+        events: ['build'],
+      };
+      await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
+      console.log(appkit.terminal.markdown('^^ build hook added ^^'));
+    }
+    console.log(appkit.terminal.markdown('^^ done ^^'));
+  } catch (err) {
+    appkit.terminal.error(err);
+  }
+}
+
+async function newRegister(appkit, args) {
+  // Validator Functions
+  const isRequired = input => (input.length > 0 ? true : 'Required Field');
+
+  const isInteger = input => (!Number.isInteger(input) ? 'Must be an Integer' : true);
+
+  const hasHash = (input) => {
+    if (input.length === 0) {
+      return 'Required Field';
+    } if (input.includes('#')) {
+      return 'Please remove leading #';
+    }
+    return true;
+  };
+
+  const validEnv = (input) => {
+    // This is an optional field
+    if (!input || input.length === 0) {
+      return true;
+    }
+
+    // Each pair should have exactly one '='
+    // Key or value should not be an empty string
+    const errors = input.split(' ').map((i) => {
+      const pair = i.split('=');
+      if (pair.length !== 2 || pair[0].length === 0 || pair[1].length === 0) {
+        return i;
+      }
+      return null; // No error (will be filtered out)
+    }).filter(a => !!a);
+
+    // Display which key/value pairs had issues
+    if (errors.length > 0) {
+      return `${errors.length} errors found:\nYour Input: ${input}\nInvalid Entries: ${errors.join(', ')}`;
+    }
+    return true;
+  };
+
+  const validName = (input) => {
+    if (input.length === 0) {
+      return 'Required Field';
+    }
+    if (input.split('-').length === 1 || input.split('-').some(a => a.length === 0)) {
+      // No '-' exists in the string, or there's a dangling '-' (i.e. 'app-')
+      return 'Please enter the full name of the app (e.g. "app-space")';
+    }
+    return true;
+  };
+
+  const questions = [
+    {
+      name: 'app',
+      type: 'input',
+      message: 'App Name:',
+      validate: validName,
+    },
+    {
+      name: 'job',
+      type: 'input',
+      message: 'Job Name:',
+      validate: isRequired,
+    },
+    {
+      name: 'jobSpace',
+      type: 'input',
+      message: 'Job Space:',
+      validate: isRequired,
+    },
+    {
+      name: 'useAppImage',
+      type: 'list',
+      message: 'Use an Akkeris app\'s image?',
+      choices: ['Yes - use an app\'s latest image', 'No - specify an image'],
+      filter: input => (input === 'Yes - use an app\'s latest image'),
+    },
+    {
+      name: 'image',
+      type: 'input',
+      message: 'App name (for image):',
+      validate: validName,
+      when: answers => !!answers.useAppImage,
+      filter: input => `akkeris://${input}`,
+    },
+    {
+      name: 'image',
+      type: 'input',
+      message: 'Image:',
+      validate: isRequired,
+      when: answers => !answers.useAppImage,
+    },
+    {
+      name: 'override',
+      type: 'list',
+      message: 'Override command in docker image?',
+      choices: ['No', 'Yes'],
+      filter: input => (input === 'Yes'),
+    },
+    {
+      name: 'command',
+      type: 'input',
+      message: 'Command:',
+      validate: isRequired,
+      when: answers => !!answers.override,
+    },
+    {
+      name: 'autoPromote',
+      type: 'list',
+      message: 'Automatically promote?',
+      choices: ['No', 'Yes'],
+      filter: input => (input === 'Yes'),
+    },
+    {
+      name: 'pipelineName',
+      type: 'input',
+      message: 'Pipeline Name:',
+      validate: isRequired,
+      when: answers => !!answers.autoPromote,
+    },
+    {
+      name: 'transitionFrom',
+      type: 'input',
+      message: 'Transition From:',
+      validate: isRequired,
+      when: answers => !!answers.autoPromote,
+    },
+    {
+      name: 'transitionTo',
+      type: 'input',
+      message: 'Transition To:',
+      validate: isRequired,
+      when: answers => !!answers.autoPromote,
+    },
+    {
+      name: 'timeout',
+      type: 'number',
+      message: 'Timeout:',
+      validate: isInteger,
+    },
+    {
+      name: 'startDelay',
+      type: 'number',
+      message: 'Start Delay:',
+      validate: isInteger,
+    },
+    {
+      name: 'slackChannel',
+      type: 'input',
+      message: 'Slack Channel (no leading #):',
+      validate: hasHash,
+    },
+    {
+      name: 'envVars',
+      type: 'input',
+      message: 'Environment Variables:\n  (e.g. KEY="value" KEY2=value2)\n>',
+      validate: validEnv,
+    },
+  ];
+
+  try {
+    console.log(appkit.terminal.markdown('\n###===### New Test Registration ###===###'));
+    console.log(appkit.terminal.markdown('###(Press [CTRL+C] to cancel at any time)###\n'));
+
+    const answers = await inquirer.prompt(questions);
+    const diagnostic = {
+      app: answers.app.split('-')[0],
+      space: answers.app.split('-').slice(1).join('-'),
+      action: 'release',
+      result: 'succeeded',
+      job: answers.job,
+      jobspace: answers.jobSpace,
+      image: answers.image,
+      command: answers.override ? answers.command : undefined,
+      pipelinename: answers.autoPromote ? answers.pipelineName : 'manual',
+      transitionfrom: answers.autoPromote ? answers.transitionFrom : 'manual',
+      transitionto: answers.autoPromote ? answers.transitionTo : 'manual',
+      timeout: answers.timeout,
+      startdelay: answers.startDelay,
+      slackchannel: answers.slackChannel,
+      env: answers.envVars
+        .replace(/"/g, '')
+        .split(' ')
+        .map(env => ({
+          name: env.split('=')[0],
+          value: env.split('=')[1],
+        }))
+        .filter(e => e.name && e.value),
+    };
+    const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
+    appkit.terminal.vtable(resp);
+    args.ID = `${answers.job}-${answers.jobSpace}`; // eslint-disable-line
+    addHooks(appkit, args); // This will be removed soon
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function getLogs(appkit, args) {
+  let uuid = '';
+  try {
+    if (isUUID(args.ID)) {
+      uuid = args.ID;
+    } else {
+      const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+      const { runs } = await appkit.http.get(
+        `${DIAGNOSTICS_API_URL}/v1/diagnostic/jobspace/${resp.jobspace}/job/${resp.job}/runs`,
+        jsonType,
+      );
+      if (!runs) { throw new Error('no runs'); }
+      uuid = runs.pop().id;
+    }
+    const logArray = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${uuid}/array`, plainType);
+    logArray.forEach(line => console.log(line));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function listRuns(appkit, args) {
+  try {
+    const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const { runs } = await appkit.http.get(
+      `${DIAGNOSTICS_API_URL}/v1/diagnostic/jobspace/${resp.jobspace}/job/${resp.job}/runs`,
+      { 'Content-Type': 'application/json' },
+    );
+
+    if (!runs) {
+      appkit.terminal.error('no runs');
+    }
+
+    appkit.terminal.table(runs.map(runItem => ({
+      runid: runItem.id,
+      app: `${runItem.app}-${runItem.space}`,
+      test: `${runItem.job}-${runItem.jobspace}`,
+      time: runItem.hrtimestamp,
+      status: appkit.terminal.markdown(runItem.overallstatus === 'success' ? '^^ success ^^' : `!! ${runItem.overallstatus} !!`),
+    })));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function updateJob(appkit, args) {
+  const property = args.p || args.property;
+  const value = args.v || args.value;
+  try {
+    const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+
+    if (property === 'timeout' || property === 'startdelay') {
+      resp[property] = parseInt(value, 10);
+    } else if (property === 'env') {
+      const env = value.toString().split(' ').map(pair => ({
+        name: pair.split('=')[0],
+        value: pair.split('=')[1],
+      }));
+      resp[property] = env;
+    } else {
+      resp[property] = value;
+    }
+
+    const resp2 = await appkit.api.patch(JSON.stringify(resp), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
+    appkit.terminal.vtable(resp2);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function job(appkit, args) {
+  try {
+    const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    console.log(appkit.terminal.markdown('^^ properties: ^^'));
+    appkit.terminal.vtable({
+      id: jobItem.id,
+      test: `${jobItem.job}-${jobItem.jobspace}`,
+      app: `${jobItem.app}-${jobItem.space}`,
+      action: jobItem.action,
+      result: jobItem.result,
+      image: jobItem.image,
+      pipelinename: jobItem.pipelinename,
+      transitionfrom: jobItem.transitionfrom,
+      transitionto: jobItem.transitionto,
+      timeout: jobItem.timeout,
+      startdelay: jobItem.startdelay,
+      slackchannel: jobItem.slackchannel,
+      command: jobItem.command ? jobItem.command : 'Default command in image',
+    });
+    console.log(appkit.terminal.markdown('^^ env: ^^'));
+    if (jobItem.env) {
+      appkit.terminal.table(jobItem.env);
+    } else {
+      console.log(appkit.terminal.markdown('  ***n/a***'));
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function listConfig(appkit, args) {
+  const simple = args.s || args.simple;
+  const exports = args.e || args.exports;
+  try {
+    const { env } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    if (!env) {
+      console.log(appkit.terminal.markdown(`\nNo environment variables set on ***${args.ID}***!`));
+    } else {
+      if (!simple && !exports) {
+        appkit.terminal.table(env);
+      }
+      if (simple) {
+        env.forEach(x => console.log(`${x.name}=${x.value}`));
+      }
+      if (exports) {
+        env.forEach(x => console.log(`export ${x.name}=${x.value}`));
+      }
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function deleteTest(appkit, args) {
+  try {
+    await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`);
+    console.log(appkit.terminal.markdown('^^ deleted ^^'));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+function colorize(text, colorname) { // eslint-disable-line
+  return text;
+}
+
+async function images(appkit) {
+  try {
+    const tests = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
+    const colorList = ['', 'green', 'blue', 'yellow', 'orange', 'purple', 'red'];
+    const colorImageMap = {};
+    let currentColor = 0;
+    let currentImage = '';
+
+    appkit.terminal.table(tests.map((test) => {
+      const imageNameAndTag = test.image.split('/').pop();
+      if (imageNameAndTag !== currentImage && !colorImageMap[imageNameAndTag] > 0) {
+        currentColor += 1;
+        colorImageMap[imageNameAndTag] = currentColor;
+      }
+      currentImage = imageNameAndTag;
+      return {
+        image: colorize(
+          imageNameAndTag,
+          colorList[colorImageMap[imageNameAndTag]] || colorList[currentColor],
+        ),
+        test: `${test.job}-${test.jobspace}`,
+        app: `${test.app}-${test.space}`,
+        id: test.id,
+      };
+    }));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function list(appkit) {
+  try {
+    const tests = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
+    if (!tests || tests.length === 0) {
+      appkit.terminal.error(appkit.terminal.markdown('No tests found. Register a test with ^^aka taas:tests:register^^'));
+      return;
+    }
+    appkit.terminal.table(tests.map(test => ({
+      id: test.id,
+      test: `${test.job}-${test.jobspace}`,
+      app: `${test.app}-${test.space}`,
+      action: test.action,
+      result: test.result,
+    })));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function artifacts(appkit, args) {
+  try {
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    if (typeof source.job === 'undefined' || source.job === '') {
+      appkit.terminal.error(appkit.terminal.markdown('!!Invalid run ID!!'));
+      return;
+    }
+    console.log(appkit.terminal.markdown(`\n~~Artifacts:~~ ${DIAGNOSTICS_API_URL}/v1/artifacts/${args.ID}/`));
+    if (process.platform === 'darwin') {
+      console.log(appkit.terminal.markdown('###CMD + Click to open###'));
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+function update() {}
+
 function init(appkit) {
-    const hooks_opts = {
-        app: {
-            alias: 'a',
-            string: true,
-            description: 'app name.',
-            demand: true
-        }
-    }
-    const job_opts = {
-        job: {
-            alias: 'j',
-            string: true,
-            description: 'job name.',
-            demand: true
-        }
-    }
+  const updateOpts = {
+    property: {
+      alias: 'p',
+      string: true,
+      description: 'property name (timeout, transitionfrom, env, etc).',
+      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel', 'command'],
+      demand: true,
+    },
+    value: {
+      alias: 'v',
+      string: true,
+      description: 'new value of the property. If updating slackchannel, do not include leading #',
+      demand: true,
+    },
+  };
 
-    const update_opts = {
-        property: {
-            alias: 'p',
-            string: true,
-            description: 'property name (timeout, transitionfrom, env, etc).',
-            choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto','timeout','startdelay','slackchannel'] ,
-            demand: true
-        },
-        value: {
-            alias: 'v',
-            string: true,
-            description: 'new value of the property. If updating slackchannel, do not include leading #',
-            demand: true
-        }
+  const secretOpts = {
+    plan: {
+      alias: 'p',
+      string: true,
+      description: 'plan name (example: xisoap-ws:dev)',
+      demand: true,
+    },
+  };
 
-    }
-    const secret_opts = {
-        plan: {
-            alias: 'p',
-            string: true,
-            description: 'plan name (example: xisoap-ws:dev)',
-            demand: true
-        }
+  const listConfigOpts = {
+    simple: {
+      alias: 's',
+      boolean: true,
+      description: 'show as simple list',
+      demand: false,
+    },
+    exports: {
+      alias: 'e',
+      boolean: true,
+      description: 'show as exports',
+      demand: false,
+    },
+  };
 
-    }
+  const multiSetOpts = {
+    suffix: {
+      alias: 's',
+      string: true,
+      description: 'filter by suffix',
+      demand: false,
+    },
+    prefix: {
+      alias: 'p',
+      string: true,
+      description: 'filter by prefix',
+      demand: false,
+    },
+  };
 
-    const listconfig_opts = {
-        simple: {
-            alias: 's',
-            boolean: true,
-            description: 'show as simple list',
-            demand: false
-        },
-        exports: {
-            alias: 'e',
-            boolean: true,
-            description: 'show as exports',
-            demand: false
-        },
-    }
+  appkit.args
+    .command('taas:tests', 'List tests', {}, list.bind(null, appkit))
+    .command('taas:images', 'List images', {}, images.bind(null, appkit))
+    .command('taas:tests:info ID', 'Describe test', {}, job.bind(null, appkit))
+    .command('taas:tests:register', 'Register test', {}, newRegister.bind(null, appkit))
+    .command('taas:tests:update ID', 'Update test', updateOpts, updateJob.bind(null, appkit))
+    .command('taas:tests:destroy ID', 'Delete test', {}, deleteTest.bind(null, appkit))
+    .command('taas:tests:trigger ID', 'Trigger a test', {}, trigger.bind(null, appkit))
+    .command('taas:tests:runs ID', 'List test runs', {}, listRuns.bind(null, appkit))
+    .command('taas:config ID', 'List environment variables', listConfigOpts, listConfig.bind(null, appkit))
+    .command('taas:config:set ID KVPAIR', 'Set an environment variable', {}, setVar.bind(null, appkit))
+    .command('taas:config:unset ID VAR', 'Unset an environment variable', {}, unsetVar.bind(null, appkit))
+    .command('taas:secret:create ID', 'Add a secret to a test', secretOpts, addSecret.bind(null, appkit))
+    .command('taas:secret:remove ID', 'Remove a secret from a test', secretOpts, removeSecret.bind(null, appkit))
+    .command('taas:hooks:create ID', 'Add testing hooks to a test\'s target app', {}, addHooks.bind(null, appkit))
+    .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
+    .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
+    .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
+    .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
+    .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
 
-    const multiset_opts = {
-        suffix: {
-            alias: 's',
-            string: true,
-            description: 'filter by suffix',
-            demand: false
-        },
-        prefix: {
-            alias: 'p',
-            string: true,
-            description: 'filter by prefix',
-            demand: false
-        },
-    }
-
-    appkit.args
-        .command('taas:tests', 'list tests', {}, list.bind(null, appkit))
-        .command('taas:images', 'list images', {}, images.bind(null, appkit))
-        .command('taas:tests:info ID', 'describe test', {}, job.bind(null, appkit))
-        .command('taas:tests:register', 'register test', {}, newregister.bind(null, appkit))
-        .command('taas:tests:update ID', 'update test', update_opts, updatejob.bind(null, appkit))
-        .command('taas:tests:destroy ID' , 'delete test', {}, deletetest.bind(null,appkit))
-        .command('taas:tests:trigger ID', 'trigger a test', {}, trigger.bind(null,appkit))
-        .command('taas:tests:runs ID', 'list test runs', {}, listruns.bind(null, appkit))
-        .command('taas:config ID', 'list environment variables', listconfig_opts, listconfig.bind(null, appkit))
-        .command('taas:config:set ID KVPAIR', 'set an environment variable', {}, setvar.bind(null, appkit))
-        .command('taas:config:unset ID VAR', 'unset and environment variable', {}, unsetvar.bind(null, appkit))
-        .command('taas:secret:create ID', 'adds a secret to a test', secret_opts, addsecret.bind(null, appkit))
-        .command('taas:secret:remove ID', 'removed a secret from a test', secret_opts, removesecret.bind(null, appkit))
-        .command('taas:hooks:create', 'add testing hooks to an app', hooks_opts, addhooks.bind(null, appkit))
-        .command('taas:runs:info ID' , 'get info for a run', {}, runinfo.bind(null, appkit))
-        .command('taas:runs:output ID', 'get logs for a run. If ID is a test name, gets latest', {}, getlogs.bind(null, appkit))
-        .command('taas:logs ID', 'get logs for a run. If ID is a test name, gets latest', {}, getlogs.bind(null, appkit))
-        .command('taas:runs:rerun ID', 'reruns a run', {}, rerun.bind(null, appkit))
- if (process.env.TAAS_BETA=="true"){
-     appkit.args
-        .command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiset_opts, multiset.bind(null, appkit))
-    }
-    }
+  if (process.env.TAAS_BETA === 'true') {
+    appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
+    appkit.args.command('taas:config:multiunset KEY', 'BETA: unset an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiUnSet.bind(null, appkit));
+    appkit.args.command('taas:tests:audits ID', 'BETA: Get audits for a test', {}, audits.bind(null, appkit));
+  }
+}
 
 module.exports = {
-    init: init,
-    update: update,
-    group: 'taas',
-    help: 'manage testing as a service (create, list, register, update)',
-    primary: true
+  init,
+  update,
+  group: 'taas',
+  help: 'manage testing as a service (create, list, register, update)',
+  primary: true,
 };
-
