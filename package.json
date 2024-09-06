@@ -17,7 +17,7 @@
   },
   "homepage": "https://github.com/akkeris/taas-plugin#readme",
   "dependencies": {
-    "inquirer": "^6.4.1"
+    "inquirer": "^9.0.0"
   },
   "devDependencies": {
     "eslint": "^5.16.0",
